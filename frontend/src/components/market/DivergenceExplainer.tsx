@@ -60,12 +60,12 @@ export function DivergenceExplainer({
 			style={{ padding: 0 }}
 		>
 			<CardContent className="p-0">
-				<div className={`grid h-8 grid-cols-[1fr_auto] items-stretch sm:grid-cols-[minmax(220px,max-content)_1fr_auto]${isLoading || error || explanation ? " border-b-2 border-foreground" : ""}`}>
-					<div className="flex h-full items-center gap-2 bg-foreground px-3 text-xs font-medium uppercase tracking-[0.08em] text-background sm:text-sm">
+				<div className={`flex items-stretch${isLoading || error || explanation ? " border-b-2 border-foreground" : ""}`}>
+					<div className="flex items-center gap-2 bg-foreground px-4 py-2 text-xs font-medium uppercase tracking-[0.08em] text-background sm:text-sm">
 						AI Divergence Analysis
 					</div>
 
-					<div className="hidden h-full items-center px-3 text-xs uppercase tracking-[0.07em] text-white sm:flex">
+					<div className="hidden flex-1 items-center px-3 text-xs uppercase tracking-[0.07em] sm:flex">
 						{isLoading
 							? "Analyzing market signal"
 							: wasCached && explanation
@@ -73,12 +73,12 @@ export function DivergenceExplainer({
 								: "Model-assisted divergence read"}
 					</div>
 
-					<div className="h-full min-w-[168px] border-l border-border">
+					<div className="ml-auto flex items-center border-l border-foreground">
 						<Button
 							onClick={handleExplain}
 							variant="ghost"
 							disabled={isLoading}
-							className={`group !flex !h-full !min-h-0 !w-full !items-center !justify-center !gap-2 !border-0 !bg-background !px-3 !py-0 text-xs uppercase tracking-[0.08em] text-foreground hover:!bg-foreground hover:!text-background sm:text-sm ${styles.explainButton}`}
+							className={`!flex !items-center !gap-2 !border-0 !bg-background !px-4 !py-2 text-xs uppercase tracking-[0.08em] text-foreground hover:!bg-foreground hover:!text-background sm:text-sm ${styles.explainButton}`}
 						>
 							<span className={styles.geminiIcon} aria-hidden="true">
 								<Image
