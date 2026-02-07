@@ -178,7 +178,7 @@ export default function LandingPage() {
               />
             ))}
           </div>
-          <p className="max-w-2xl text-base text-muted">
+          <p className="max-w-2xl text-base">
             A wallet-weighted signal engine that spots informed flow before markets reprice.
           </p>
           <Link href="/dashboard">
