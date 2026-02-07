@@ -2,6 +2,16 @@
 
 This is the submission to the CxC hackathon.
 
+## Frontend MVP 
+
+Requirements: pnpm 
+
+```Bash
+cd frontend && pnpm install && pnpm dev
+```
+
+Visit `localhost:3000` to view the dashboard.
+
 ## Backend MVP
 
 Wallet-weighted SmartCrowd backend lives in `backend/`.
