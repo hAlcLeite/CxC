@@ -15,14 +15,6 @@ const navItems = [
   { href: "/alerts", label: "Alerts" },
 ];
 
-const landingNavItems = [
-  { href: "#features", label: "Features" },
-  { href: "#visualization", label: "Visualization" },
-  { href: "#how-it-works", label: "How it Works" },
-  { href: "#tracks", label: "Tracks" },
-  { href: "#demo", label: "Demo" },
-];
-
 export function Header() {
   const pathname = usePathname();
   const [showPipelineModal, setShowPipelineModal] = useState(false);
@@ -30,7 +22,10 @@ export function Header() {
 
   const alertCount = alertsData?.count ?? 0;
   const isLanding = pathname === "/";
-  const signInHref = "#demo";
+
+  if (isLanding) {
+    return null;
+  }
 
   return (
     <>
@@ -42,20 +37,20 @@ export function Header() {
             </Link>
 
             <nav className="flex items-center gap-1">
-              {(isLanding ? landingNavItems : navItems).map((item) => (
+              {navItems.map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={clsx(
                     "px-3 py-2 font-mono text-sm transition-colors",
                     "border-2 border-transparent",
-                    !isLanding && pathname === item.href
+                    pathname === item.href
                       ? "border-foreground bg-foreground text-background"
                       : "hover:border-foreground"
                   )}
                 >
                   {item.label}
-                  {!isLanding && item.label === "Alerts" && alertCount > 0 && (
+                  {item.label === "Alerts" && alertCount > 0 && (
                     <span className="ml-2 inline-flex h-5 w-5 items-center justify-center border-2 border-danger text-xs text-danger">
                       {alertCount > 99 ? "99+" : alertCount}
                     </span>
@@ -65,24 +60,16 @@ export function Header() {
             </nav>
           </div>
 
-          {isLanding ? (
-            <Link href={signInHref}>
-              <Button size="sm" variant="secondary">Sign In</Button>
-            </Link>
-          ) : (
-            <Button size="sm" onClick={() => setShowPipelineModal(true)}>
-              Refresh Data
-            </Button>
-          )}
+          <Button size="sm" onClick={() => setShowPipelineModal(true)}>
+            Refresh Data
+          </Button>
         </div>
       </header>
 
-      {!isLanding && (
-        <RunPipelineModal
-          open={showPipelineModal}
-          onClose={() => setShowPipelineModal(false)}
-        />
-      )}
+      <RunPipelineModal
+        open={showPipelineModal}
+        onClose={() => setShowPipelineModal(false)}
+      />
     </>
   );
 }

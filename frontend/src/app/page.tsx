@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   Badge,
   Button,
@@ -16,6 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui";
+import { ThreeTechnologyBackground } from "@/components/background/ThreeTechnologyBackground";
 
 type InfluenceNode = {
   id: string;
@@ -62,106 +63,65 @@ function getNodeById(id: string) {
   return INFLUENCE_NODES.find((node) => node.id === id);
 }
 
-function DotGridBackground({ mouseX, mouseY }: { mouseX: number; mouseY: number }) {
-  return (
-    <div
-      aria-hidden="true"
-      className="pointer-events-none fixed inset-0 opacity-15"
-      style={{
-        maskImage: `radial-gradient(800px circle at ${mouseX * 100}% ${mouseY * 100}%, black 35%, transparent 82%)`,
-        WebkitMaskImage: `radial-gradient(800px circle at ${mouseX * 100}% ${mouseY * 100}%, black 35%, transparent 82%)`,
-      }}
-    >
-      <div
-        className="h-full w-full bg-[radial-gradient(circle,_var(--foreground)_1px,transparent_1.4px)] [background-size:24px_24px]"
-        style={{
-          transform: `translate3d(${(mouseX - 0.5) * 18}px, ${(mouseY - 0.5) * 18}px, 0)`,
-          backgroundPosition: `${mouseX * 16}px ${mouseY * 16}px`,
-        }}
-      />
-    </div>
-  );
-}
-
 export default function LandingPage() {
   const [showCommunities, setShowCommunities] = useState(true);
   const [showGlow, setShowGlow] = useState(true);
   const [showLeadLag, setShowLeadLag] = useState(true);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
-  const [mousePos, setMousePos] = useState({ x: 0.5, y: 0.34 });
   const activeNode = activeNodeId ? getNodeById(activeNodeId) : null;
-
-  useEffect(() => {
-    const onMouseMove = (event: MouseEvent) => {
-      const nextX = Math.max(0, Math.min(1, event.clientX / window.innerWidth));
-      const nextY = Math.max(0, Math.min(1, event.clientY / window.innerHeight));
-      setMousePos({ x: nextX, y: nextY });
-    };
-
-    window.addEventListener("mousemove", onMouseMove, { passive: true });
-    return () => window.removeEventListener("mousemove", onMouseMove);
-  }, []);
 
   return (
     <div className="relative isolate space-y-16 pb-12">
-      <div className="pointer-events-none fixed inset-0 -z-10" aria-hidden="true">
-        <video
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="metadata"
-          className="absolute inset-0 h-full w-full scale-105 object-cover opacity-20 blur-[2px] grayscale"
-        >
-          <source src="/bg/data-viz-bg.mp4" type="video/mp4" />
-        </video>
-        <div className="absolute inset-0 bg-background/55" />
-      </div>
-      <DotGridBackground mouseX={mousePos.x} mouseY={mousePos.y} />
+      <ThreeTechnologyBackground />
 
       <section
         id="top"
         className="relative z-10 flex min-h-[calc(100vh-10rem)] items-center justify-center"
       >
         <div className="relative z-10 flex flex-col items-center gap-6 text-center">
-          <h1 className="text-6xl font-bold tracking-tight">Precognition</h1>
+          <h1 className="text-6xl font-bold tracking-tight">PRECOGNITION</h1>
+          <p className="max-w-2xl text-base text-muted">
+            A wallet-weighted signal engine that spots informed flow before markets reprice.
+          </p>
           <Link href="/dashboard">
-            <Button size="lg">Enter App</Button>
+            <Button size="lg">Launch</Button>
           </Link>
         </div>
       </section>
 
-      <section id="features" className="space-y-4 scroll-mt-24">
+
+      <section id="how-it-works" className="space-y-4 scroll-mt-24">
         <div>
-          <h2 className="text-3xl font-bold">Why It&apos;s Different</h2>
+          <h2 className="text-3xl font-bold">How It Works</h2>
           <p className="mt-2 text-muted">
-            A manipulation-aware probability model built on wallet behavior.
+            A short flow from raw wallet activity to a calibrated probability signal.
           </p>
         </div>
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="grid gap-4 md:grid-cols-4">
           {[
-            "Wallet-weighted, not price-only",
-            "Conditional skill by category/horizon",
-            "Shrinkage + uncertainty",
-            "Manipulation-aware confidence",
-            "Sequence-based belief inference",
-          ].map((item) => (
-            <Card key={item}>
-              <CardContent className="flex gap-3">
-                <svg
-                  viewBox="0 0 20 20"
-                  className="mt-0.5 h-5 w-5 shrink-0"
-                  fill="none"
-                  aria-hidden="true"
-                >
-                  <rect x="2" y="2" width="16" height="16" stroke="currentColor" strokeWidth="2" />
-                  <path d="M5 10h10M10 5v10" stroke="currentColor" strokeWidth="2" />
-                </svg>
-                <p className="text-sm">{item}</p>
+            "We ingest wallet-level trade flow from active prediction markets.",
+            "We group wallets into cohorts by category, horizon, and historical calibration.",
+            "We infer cohort belief from trading sequences and net flow, not just last price.",
+            "We publish SmartCrowd Prob next to Market Prob with a short explanation.",
+          ].map((step, index) => (
+            <Card key={step}>
+              <CardContent className="space-y-3">
+                <Badge variant="muted">Step {index + 1}</Badge>
+                <p className="text-sm">{step}</p>
               </CardContent>
             </Card>
           ))}
         </div>
+        <Card>
+          <CardContent className="space-y-3 text-sm">
+            <p>
+              Market implies 62%, SmartCrowd says 53% because calibrated cohorts are net selling YES.
+            </p>
+            <p className="text-muted">
+              Confidence is higher when skilled cohorts agree and flow looks organic, and lower when activity looks thin, erratic, or potentially coordinated; research-only, not financial advice.
+            </p>
+          </CardContent>
+        </Card>
       </section>
 
       <section id="visualization" className="space-y-4 scroll-mt-24">
@@ -298,65 +258,6 @@ export default function LandingPage() {
         </Card>
       </section>
 
-      <section id="how-it-works" className="space-y-4 scroll-mt-24">
-        <div>
-          <h2 className="text-3xl font-bold">How It Works</h2>
-          <p className="mt-2 text-muted">
-            A short flow from raw wallet activity to a calibrated probability signal.
-          </p>
-        </div>
-        <div className="grid gap-4 md:grid-cols-4">
-          {[
-            "We ingest wallet-level trade flow from active prediction markets.",
-            "We group wallets into cohorts by category, horizon, and historical calibration.",
-            "We infer cohort belief from trading sequences and net flow, not just last price.",
-            "We publish SmartCrowd Prob next to Market Prob with a short explanation.",
-          ].map((step, index) => (
-            <Card key={step}>
-              <CardContent className="space-y-3">
-                <Badge variant="muted">Step {index + 1}</Badge>
-                <p className="text-sm">{step}</p>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-        <Card>
-          <CardContent className="space-y-3 text-sm">
-            <p>
-              Market implies 62%, SmartCrowd says 53% because calibrated cohorts are net selling YES.
-            </p>
-            <p className="text-muted">
-              Confidence is higher when skilled cohorts agree and flow looks organic, and lower when activity looks thin, erratic, or potentially coordinated; research-only, not financial advice.
-            </p>
-          </CardContent>
-        </Card>
-      </section>
-
-      <section id="tracks" className="space-y-4 scroll-mt-24">
-        <div>
-          <h2 className="text-3xl font-bold">Tracks We Hit</h2>
-        </div>
-        <div className="grid gap-3 md:grid-cols-2">
-          {[
-            ["Most Creative Data Visualization", "Living Influence Graph / Constellation Map"],
-            ["Best Use of Gemini API", "Explanation agent"],
-            ["Best Audio AI Hack", "Voice briefings / alerts via ElevenLabs"],
-            ["Best Use of Auth0", "Login + roles + personalized alerts"],
-            ["Best Use of Solana", "Tamper-evident signal attestations"],
-            ["AI For Good", "Integrity shield / manipulation detection"],
-          ].map(([title, detail]) => (
-            <Card key={title}>
-              <CardContent className="flex items-start justify-between gap-3 text-sm">
-                <div>
-                  <div className="font-bold">{title}</div>
-                  <div className="mt-1 text-muted">{detail}</div>
-                </div>
-                <Badge variant="success">CHECK</Badge>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
-      </section>
 
       <section id="demo" className="space-y-4 scroll-mt-24">
         <div>
@@ -373,9 +274,9 @@ export default function LandingPage() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead></TableHead>
                     <TableHead>Market</TableHead>
-                    <TableHead>Market Prob</TableHead>
-                    <TableHead>SmartCrowd</TableHead>
+                    <TableHead>Precognition</TableHead>
                     <TableHead>Confidence</TableHead>
                     <TableHead>Divergence</TableHead>
                   </TableRow>
@@ -467,10 +368,8 @@ export default function LandingPage() {
 
       <footer className="border-t-2 border-foreground pt-6 text-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-muted">Built for [Hackathon Name]</div>
           <div className="flex items-center gap-4">
             <Link href="#" className="hover:underline">GitHub</Link>
-            <Link href="#" className="hover:underline">Contact</Link>
           </div>
         </div>
       </footer>
