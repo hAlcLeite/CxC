@@ -1,0 +1,2 @@
+"""SmartCrowd backend package."""
+

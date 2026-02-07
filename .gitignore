@@ -39,3 +39,10 @@ frontend/.vercel
 # typescript
 frontend/*.tsbuildinfo
 frontend/next-env.d.ts
+
+# backend
+backend/.venv/
+backend/__pycache__/
+backend/**/*.pyc
+backend/data/
+backend/*.egg-info/

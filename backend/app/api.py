@@ -1,0 +1,386 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from collections import defaultdict
+from contextlib import contextmanager
+from datetime import datetime
+
+from fastapi import Depends, FastAPI, HTTPException, Query
+
+from app.config import DB_PATH
+from app.db import get_connection, init_db
+from app.schemas import (
+    BacktestRequest,
+    GenericResponse,
+    HealthResponse,
+    IngestRequest,
+    IngestResponse,
+    PolymarketIngestRequest,
+    RecomputeRequest,
+)
+from app.services.backtest import run_backtest
+from app.services.beliefs import yes_direction
+from app.services.ingest import ingest_markets, ingest_outcomes, ingest_trades
+from app.services.pipeline import recompute_pipeline
+from app.services.polymarket import ingest_polymarket
+from app.services.smartcrowd import build_market_snapshot, latest_screener_rows
+
+
+def create_app() -> FastAPI:
+    app = FastAPI(title="SmartCrowd Backend MVP", version="0.1.0")
+
+    @app.on_event("startup")
+    def _startup() -> None:
+        init_db()
+
+    @contextmanager
+    def _conn_ctx() -> sqlite3.Connection:
+        conn = get_connection()
+        try:
+            yield conn
+        finally:
+            conn.close()
+
+    def get_conn() -> sqlite3.Connection:
+        with _conn_ctx() as conn:
+            yield conn
+
+    @app.get("/health", response_model=HealthResponse)
+    def health() -> HealthResponse:
+        return HealthResponse(status="ok")
+
+    @app.post("/ingest/csv", response_model=IngestResponse)
+    def ingest_csv(req: IngestRequest, conn: sqlite3.Connection = Depends(get_conn)) -> IngestResponse:
+        if not req.markets_path and not req.trades_path and not req.outcomes_path:
+            raise HTTPException(status_code=400, detail="Provide at least one CSV path.")
+
+        ingested: dict[str, int] = {}
+        with conn:
+            if req.markets_path:
+                ingested["markets"] = ingest_markets(conn, req.markets_path)
+            if req.trades_path:
+                trade_result = ingest_trades(conn, req.trades_path)
+                ingested["trades_inserted"] = trade_result["inserted"]
+                ingested["trades_skipped"] = trade_result["skipped"]
+            if req.outcomes_path:
+                ingested["outcomes"] = ingest_outcomes(conn, req.outcomes_path)
+
+        return IngestResponse(ingested=ingested, db_path=str(DB_PATH))
+
+    @app.post("/ingest/polymarket", response_model=GenericResponse)
+    def ingest_live_polymarket(
+        req: PolymarketIngestRequest,
+        run_recompute: bool = Query(default=True),
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> GenericResponse:
+        with conn:
+            ingest_result = ingest_polymarket(
+                conn,
+                include_active_markets=req.include_active_markets,
+                include_closed_markets=req.include_closed_markets,
+                active_markets_limit=req.active_markets_limit,
+                closed_markets_limit=req.closed_markets_limit,
+                trades_per_market=req.trades_per_market,
+                trade_page_size=req.trade_page_size,
+                market_chunk_size=req.market_chunk_size,
+                taker_only=req.taker_only,
+                min_trade_timestamp=req.min_trade_timestamp,
+                max_trade_timestamp=req.max_trade_timestamp,
+            )
+            pipeline_result: dict[str, int] | None = None
+            if run_recompute:
+                pipeline_result = recompute_pipeline(conn, include_resolved_snapshots=True)
+        return GenericResponse(
+            result={
+                "source": "polymarket_api",
+                "ingest": ingest_result,
+                "pipeline": pipeline_result,
+                "db_path": str(DB_PATH),
+            }
+        )
+
+    @app.post("/pipeline/recompute", response_model=GenericResponse)
+    def recompute(req: RecomputeRequest, conn: sqlite3.Connection = Depends(get_conn)) -> GenericResponse:
+        with conn:
+            result = recompute_pipeline(
+                conn,
+                snapshot_time=req.snapshot_time,
+                include_resolved_snapshots=req.include_resolved_snapshots,
+            )
+        return GenericResponse(result=result)
+
+    @app.get("/screener", response_model=GenericResponse)
+    def screener(
+        limit: int = Query(default=25, ge=1, le=200),
+        min_confidence: float = Query(default=0.0, ge=0.0, le=1.0),
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> GenericResponse:
+        rows = latest_screener_rows(conn, limit=limit, min_confidence=min_confidence)
+        payload = []
+        for row in rows:
+            top_drivers = json.loads(row["top_drivers"]) if row["top_drivers"] else []
+            payload.append(
+                {
+                    "market_id": row["market_id"],
+                    "question": row["question"],
+                    "category": row["category"],
+                    "end_time": row["end_time"],
+                    "snapshot_time": row["snapshot_time"],
+                    "market_prob": row["market_prob"],
+                    "smartcrowd_prob": row["smartcrowd_prob"],
+                    "divergence": row["divergence"],
+                    "confidence": row["confidence"],
+                    "disagreement": row["disagreement"],
+                    "participation_quality": row["participation_quality"],
+                    "integrity_risk": row["integrity_risk"],
+                    "active_wallets": row["active_wallets"],
+                    "top_drivers": top_drivers[:5],
+                }
+            )
+        return GenericResponse(result={"count": len(payload), "markets": payload})
+
+    @app.get("/markets/{market_id}", response_model=GenericResponse)
+    def market_detail(
+        market_id: str,
+        history_points: int = Query(default=60, ge=5, le=500),
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> GenericResponse:
+        market = conn.execute(
+            "SELECT id, question, category, end_time, liquidity FROM markets WHERE id = ?",
+            (market_id,),
+        ).fetchone()
+        if not market:
+            raise HTTPException(status_code=404, detail=f"Market not found: {market_id}")
+
+        latest = conn.execute(
+            """
+            SELECT *
+            FROM smartcrowd_snapshots
+            WHERE market_id = ?
+            ORDER BY snapshot_time DESC
+            LIMIT 1
+            """,
+            (market_id,),
+        ).fetchone()
+        if not latest:
+            with conn:
+                snapshot = build_market_snapshot(conn, market_id, persist=True)
+            latest = conn.execute(
+                """
+                SELECT *
+                FROM smartcrowd_snapshots
+                WHERE market_id = ?
+                ORDER BY snapshot_time DESC
+                LIMIT 1
+                """,
+                (market_id,),
+            ).fetchone()
+            if not latest:
+                raise HTTPException(status_code=500, detail="Failed to compute market snapshot.")
+
+        time_series = conn.execute(
+            """
+            SELECT snapshot_time, market_prob, smartcrowd_prob, divergence, confidence
+            FROM smartcrowd_snapshots
+            WHERE market_id = ?
+            ORDER BY snapshot_time DESC
+            LIMIT ?
+            """,
+            (market_id, history_points),
+        ).fetchall()
+
+        trade_rows = conn.execute(
+            """
+            SELECT side, action, size
+            FROM trades
+            WHERE market_id = ?
+            ORDER BY ts DESC
+            LIMIT 2000
+            """,
+            (market_id,),
+        ).fetchall()
+        net_yes_flow = 0.0
+        for tr in trade_rows:
+            direction = yes_direction(tr["side"], tr["action"])
+            net_yes_flow += direction * float(tr["size"])
+
+        smart_prob = float(latest["smartcrowd_prob"])
+        market_prob = float(latest["market_prob"])
+        confidence = float(latest["confidence"])
+        top_drivers = json.loads(latest["top_drivers"]) if latest["top_drivers"] else []
+        if smart_prob > market_prob:
+            directional = "net buying YES"
+        elif smart_prob < market_prob:
+            directional = "net buying NO"
+        else:
+            directional = "balanced flow"
+        explanation = (
+            f"Market implied is {market_prob:.3f}, SmartCrowd is {smart_prob:.3f} with "
+            f"confidence {confidence:.2f}, driven by trusted cohorts {directional}."
+        )
+
+        return GenericResponse(
+            result={
+                "market": {
+                    "id": market["id"],
+                    "question": market["question"],
+                    "category": market["category"],
+                    "end_time": market["end_time"],
+                    "liquidity": market["liquidity"],
+                },
+                "latest_snapshot": {
+                    "snapshot_time": latest["snapshot_time"],
+                    "market_prob": market_prob,
+                    "smartcrowd_prob": smart_prob,
+                    "divergence": latest["divergence"],
+                    "confidence": confidence,
+                    "disagreement": latest["disagreement"],
+                    "participation_quality": latest["participation_quality"],
+                    "integrity_risk": latest["integrity_risk"],
+                    "active_wallets": latest["active_wallets"],
+                    "top_drivers": top_drivers,
+                },
+                "time_series": [dict(row) for row in reversed(time_series)],
+                "flow_summary": {"net_yes_flow_size": net_yes_flow, "trade_count": len(trade_rows)},
+                "explanation": explanation,
+            }
+        )
+
+    @app.get("/wallets/{wallet}", response_model=GenericResponse)
+    def wallet_detail(wallet: str, conn: sqlite3.Connection = Depends(get_conn)) -> GenericResponse:
+        normalized_wallet = wallet.lower()
+        metrics = conn.execute(
+            """
+            SELECT *
+            FROM wallet_metrics
+            WHERE wallet = ?
+            ORDER BY category, horizon_bucket
+            """,
+            (normalized_wallet,),
+        ).fetchall()
+        weights = conn.execute(
+            """
+            SELECT *
+            FROM wallet_weights
+            WHERE wallet = ?
+            ORDER BY category, horizon_bucket
+            """,
+            (normalized_wallet,),
+        ).fetchall()
+        if not metrics and not weights:
+            raise HTTPException(status_code=404, detail=f"Wallet not found: {normalized_wallet}")
+
+        return GenericResponse(
+            result={
+                "wallet": normalized_wallet,
+                "metrics": [dict(r) for r in metrics],
+                "weights": [dict(r) for r in weights],
+            }
+        )
+
+    @app.post("/backtest", response_model=GenericResponse)
+    def backtest(req: BacktestRequest, conn: sqlite3.Connection = Depends(get_conn)) -> GenericResponse:
+        with conn:
+            summary = run_backtest(conn, cutoff_hours=req.cutoff_hours, run_id=req.run_id)
+        return GenericResponse(result=summary)
+
+    @app.get("/backtest/{run_id}", response_model=GenericResponse)
+    def get_backtest(run_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> GenericResponse:
+        row = conn.execute(
+            "SELECT summary_json FROM backtest_reports WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail=f"Backtest run not found: {run_id}")
+        return GenericResponse(result=json.loads(row["summary_json"]))
+
+    @app.get("/alerts", response_model=GenericResponse)
+    def alerts(
+        divergence_threshold: float = Query(default=0.08, ge=0.01, le=0.5),
+        integrity_risk_threshold: float = Query(default=0.65, ge=0.0, le=1.0),
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> GenericResponse:
+        rows = conn.execute(
+            """
+            WITH ranked AS (
+              SELECT
+                market_id,
+                snapshot_time,
+                divergence,
+                confidence,
+                integrity_risk,
+                ROW_NUMBER() OVER (PARTITION BY market_id ORDER BY snapshot_time DESC) AS rn
+              FROM smartcrowd_snapshots
+            )
+            SELECT
+              r.market_id,
+              r.snapshot_time,
+              r.divergence,
+              r.confidence,
+              r.integrity_risk,
+              m.question,
+              m.category,
+              p.divergence AS prev_divergence
+            FROM ranked r
+            JOIN markets m ON m.id = r.market_id
+            LEFT JOIN ranked p
+              ON p.market_id = r.market_id
+             AND p.rn = 2
+            WHERE r.rn = 1
+            """
+        ).fetchall()
+
+        alerts_payload: list[dict] = []
+        for row in rows:
+            divergence = float(row["divergence"])
+            confidence = float(row["confidence"])
+            integrity_risk = float(row["integrity_risk"])
+            prev_divergence = row["prev_divergence"]
+
+            if abs(divergence) >= divergence_threshold and confidence >= 0.5:
+                alerts_payload.append(
+                    {
+                        "type": "trusted_cohort_regime_shift",
+                        "market_id": row["market_id"],
+                        "question": row["question"],
+                        "category": row["category"],
+                        "snapshot_time": row["snapshot_time"],
+                        "detail": f"Divergence {divergence:.3f} with confidence {confidence:.2f}.",
+                    }
+                )
+
+            if integrity_risk >= integrity_risk_threshold:
+                alerts_payload.append(
+                    {
+                        "type": "integrity_risk_spike",
+                        "market_id": row["market_id"],
+                        "question": row["question"],
+                        "category": row["category"],
+                        "snapshot_time": row["snapshot_time"],
+                        "detail": f"Integrity risk at {integrity_risk:.2f}.",
+                    }
+                )
+
+            if prev_divergence is not None:
+                prev_val = float(prev_divergence)
+                if divergence * prev_val < 0:
+                    alerts_payload.append(
+                        {
+                            "type": "smartcrowd_crossed_market",
+                            "market_id": row["market_id"],
+                            "question": row["question"],
+                            "category": row["category"],
+                            "snapshot_time": row["snapshot_time"],
+                            "detail": (
+                                f"Divergence crossed zero from {prev_val:.3f} to {divergence:.3f}."
+                            ),
+                        }
+                    )
+
+        grouped = defaultdict(list)
+        for alert in alerts_payload:
+            grouped[alert["type"]].append(alert)
+        return GenericResponse(result={"count": len(alerts_payload), "alerts": alerts_payload, "by_type": grouped})
+
+    return app
