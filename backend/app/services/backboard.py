@@ -1,6 +1,7 @@
 """
-AI-powered divergence explanations using Google Gemini directly.
+AI-powered divergence explanations using Backboard.io with Google Gemini.
 
+Backboard.io acts as a unified API layer that routes to Gemini using BYOK (Bring Your Own Key).
 Includes rate limiting and caching to prevent excessive API calls.
 """
 
@@ -9,20 +10,17 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
 import time
 from typing import Any
 
 import requests
 
-from app.config import BACKBOARD_API_KEY
+  logger = logging.getLogger("smartcrowd.backboard")
 
-logger = logging.getLogger("precognition.backboard")
-
-# Try to get Gemini API key (fallback to BACKBOARD for backwards compat)
-import os
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
-
-GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+# Backboard.io API configuration
+BACKBOARD_API_KEY = os.getenv("BACKBOARD_API_KEY", "")
+BACKBOARD_API_URL = "https://app.backboard.io/api"
 
 # Rate limiting: track last call time per market
 _last_call_times: dict[str, float] = {}
@@ -32,7 +30,10 @@ _MIN_INTERVAL_SECONDS = 60  # Minimum 60 seconds between calls for same market
 _explanation_cache: dict[str, tuple[str, float]] = {}
 _CACHE_TTL_SECONDS = 300  # Cache explanations for 5 minutes
 
-SYSTEM_PROMPT = """You are a prediction market analyst for Precognition, a platform that tracks high-accuracy traders ("whales") on Polymarket.
+# Cache for assistant ID
+_assistant_id: str | None = None
+
+SYSTEM_PROMPT = """You are a prediction market analyst for SmartCrowd, a platform that tracks high-accuracy traders ("whales") on Polymarket.
 
 When given market data showing divergence between market odds and Precognition predictions, you analyze:
 1. What the divergence means (Precognition is more bullish/bearish than the market)
@@ -40,6 +41,14 @@ When given market data showing divergence between market odds and Precognition p
 3. Why informed traders might see something the market doesn't
 
 Be concise (2-3 sentences max). Focus on actionable insights. Use plain language."""
+
+
+def _get_headers() -> dict[str, str]:
+    """Get the correct headers for Backboard.io API."""
+    return {
+        "X-API-Key": BACKBOARD_API_KEY,  # Correct auth header per Backboard.io docs
+        "Content-Type": "application/json",
+    }
 
 
 def _get_cache_key(context: dict[str, Any]) -> str:
@@ -86,6 +95,36 @@ def _cache_explanation(cache_key: str, explanation: str) -> None:
         )
         for key in sorted_keys[:20]:
             del _explanation_cache[key]
+
+
+def _get_or_create_assistant() -> str:
+    """Get or create a Backboard.io assistant for market analysis."""
+    global _assistant_id
+    
+    if _assistant_id:
+        return _assistant_id
+    
+    # Create a new assistant configured to use Gemini
+    payload = {
+        "name": "SmartCrowd Market Analyst",
+        "system_prompt": SYSTEM_PROMPT,
+        "llm_provider": "google",
+        "model_name": "gemini-2.0-flash",  # Changed from llm_model_name to model_name per docs
+    }
+    
+    response = requests.post(
+        f"{BACKBOARD_API_URL}/assistants",
+        json=payload,
+        headers=_get_headers(),
+        timeout=30,
+    )
+    response.raise_for_status()
+    
+    data = response.json()
+    _assistant_id = data.get("assistant_id") or data.get("id")
+    logger.info(f"Created Backboard.io assistant: {_assistant_id}")
+    
+    return _assistant_id
 
 
 def _format_context_message(context: dict[str, Any]) -> str:
@@ -136,7 +175,7 @@ Explain in 2-3 sentences why Precognition disagrees with the market and what inf
 
 def explain_divergence(context: dict[str, Any]) -> dict[str, Any]:
     """
-    Generate an AI explanation for market divergence using Gemini.
+    Generate an AI explanation for market divergence using Backboard.io + Gemini.
     
     Includes rate limiting and caching to prevent API abuse.
     """
@@ -163,69 +202,63 @@ def explain_divergence(context: dict[str, Any]) -> dict[str, Any]:
         }
     
     # Check API key
-    if not GEMINI_API_KEY:
-        logger.error("GEMINI_API_KEY not configured")
+    if not BACKBOARD_API_KEY:
+        logger.error("BACKBOARD_API_KEY not configured")
         return {
             "explanation": None,
-            "error": "Gemini API key not configured. Please add GEMINI_API_KEY to your .env file.",
+            "error": "Backboard.io API key not configured. Please add BACKBOARD_API_KEY to your .env file.",
         }
     
     try:
-        # Call Gemini API directly
-        url = f"{GEMINI_API_URL}?key={GEMINI_API_KEY}"
+        # Get or create assistant
+        assistant_id = _get_or_create_assistant()
         
-        prompt = _format_context_message(context)
-        
-        payload = {
-            "contents": [
-                {
-                    "parts": [
-                        {"text": f"{SYSTEM_PROMPT}\n\n{prompt}"}
-                    ]
-                }
-            ],
-            "generationConfig": {
-                "temperature": 0.7,
-                "maxOutputTokens": 256,
-            }
-        }
-        
-        response = requests.post(
-            url,
-            json=payload,
-            headers={"Content-Type": "application/json"},
+        # Create a thread for this assistant
+        thread_response = requests.post(
+            f"{BACKBOARD_API_URL}/assistants/{assistant_id}/threads",
+            json={},
+            headers=_get_headers(),
             timeout=30,
         )
-        response.raise_for_status()
+        thread_response.raise_for_status()
+        thread_data = thread_response.json()
+        thread_id = thread_data.get("thread_id") or thread_data.get("id")
         
-        data = response.json()
+        # Send message and get response (non-streaming)
+        prompt = _format_context_message(context)
+        # For messages endpoint, use form data (not JSON) per Backboard.io docs
+        message_headers = {"X-API-Key": BACKBOARD_API_KEY}  # No Content-Type for form data
+        message_response = requests.post(
+            f"{BACKBOARD_API_URL}/threads/{thread_id}/messages",
+            headers=message_headers,
+            data={"content": prompt, "stream": "false", "memory": "Off"},
+            timeout=60,
+        )
+        message_response.raise_for_status()
+        message_data = message_response.json()
         
-        # Extract text from Gemini response
-        explanation = ""
-        if "candidates" in data and data["candidates"]:
-            candidate = data["candidates"][0]
-            if "content" in candidate and "parts" in candidate["content"]:
-                parts = candidate["content"]["parts"]
-                if parts and "text" in parts[0]:
-                    explanation = parts[0]["text"].strip()
+        # Extract explanation from response
+        explanation = message_data.get("content", "")
         
         if explanation:
             _update_rate_limit(market_id)
             _cache_explanation(cache_key, explanation)
             
-            logger.info(f"Generated explanation for market {market_id}")
+            logger.info(f"Generated explanation for market {market_id} via Backboard.io")
             return {
                 "explanation": explanation,
                 "cached": False,
+                "provider": "backboard.io",
             }
         else:
+            logger.warning(f"Empty response from Backboard.io: {message_data}")
             return {
                 "explanation": None,
                 "error": "No explanation received from AI",
             }
             
     except requests.RequestException as e:
-        logger.error(f"Gemini API error: {e}")
+        logger.error(f"Backboard.io API error: {e}")
         return {
             "explanation": None,
             "error": f"Failed to get AI explanation: {str(e)}",
