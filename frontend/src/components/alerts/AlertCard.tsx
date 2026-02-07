@@ -37,33 +37,30 @@ function getAlertVariant(
 
 export function AlertCard({ alert }: AlertCardProps) {
 	return (
-		<Card hover>
-			<CardContent>
-				<div className="flex items-start justify-between gap-4">
-					<div className="flex-1">
-						<div className="flex flex-wrap items-center gap-2">
-							<Badge variant={getAlertVariant(alert.type)} className="transition-colors group-hover:bg-foreground group-hover:border-background group-hover:text-background">
-								{getAlertTypeLabel(alert.type)}
-							</Badge>
-							{alert.category && (
-								<Badge variant="muted" className="transition-colors group-hover:bg-foreground group-hover:border-background group-hover:text-background">{alert.category}</Badge>
-							)}
-							<span className="text-sm text-muted">
-								{formatDistanceToNow(new Date(alert.snapshot_time), {
-									addSuffix: true,
-								})}
-							</span>
+		<Link href={`/markets/${alert.market_id}?from=alerts`} className="block">
+			<Card hover className="cursor-pointer">
+				<CardContent>
+					<div className="flex items-start justify-between gap-4">
+						<div className="flex-1">
+							<div className="flex flex-wrap items-center gap-2">
+								<Badge variant={getAlertVariant(alert.type)} className="transition-colors group-hover:bg-foreground group-hover:border-background group-hover:text-background">
+									{getAlertTypeLabel(alert.type)}
+								</Badge>
+								{alert.category && (
+									<Badge variant="muted" className="transition-colors group-hover:bg-foreground group-hover:border-background group-hover:text-background">{alert.category}</Badge>
+								)}
+								<span className="text-sm text-muted">
+									{formatDistanceToNow(new Date(alert.snapshot_time), {
+										addSuffix: true,
+									})}
+								</span>
+							</div>
+							<p className="mt-2 text-lg font-bold">{alert.question}</p>
+							<p className="mt-2 text-sm text-muted">{alert.detail}</p>
 						</div>
-						<Link
-							href={`/markets/${alert.market_id}`}
-							className="mt-2 block text-lg font-bold hover:underline"
-						>
-							{alert.question}
-						</Link>
-						<p className="mt-2 text-sm text-muted">{alert.detail}</p>
 					</div>
-				</div>
-			</CardContent>
-		</Card>
+				</CardContent>
+			</Card>
+		</Link>
 	);
 }

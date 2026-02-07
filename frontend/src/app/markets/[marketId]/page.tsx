@@ -2,6 +2,7 @@
 
 import { use } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { LoadingState, Card, CardContent, Badge } from "@/components/ui";
 import { SnapshotPanel } from "@/components/market/SnapshotPanel";
 import { ProbabilityChart } from "@/components/market/ProbabilityChart";
@@ -16,6 +17,10 @@ export default function MarketDetailPage({
 	params: Promise<{ marketId: string }>;
 }) {
 	const { marketId } = use(params);
+	const searchParams = useSearchParams();
+	const from = searchParams.get("from");
+	const backHref = from === "alerts" ? "/alerts" : "/screener";
+	const backLabel = from === "alerts" ? "Back to Alerts" : "Back to Screener";
 	const { data, isLoading, error } = useMarket(marketId);
 
 	if (isLoading) {
@@ -25,8 +30,8 @@ export default function MarketDetailPage({
 	if (error || !data) {
 		return (
 			<div className="space-y-4">
-				<Link href="/screener" className="text-muted hover:underline">
-					&larr; Back to Screener
+				<Link href={backHref} className="text-muted hover:underline">
+					&larr; {backLabel}
 				</Link>
 				<Card className="border-danger">
 					<CardContent className="py-8 text-center">
@@ -45,8 +50,8 @@ export default function MarketDetailPage({
 	return (
 		<div className="space-y-6">
 			<div>
-				<Link href="/screener" className="font-bold hover:underline">
-					&larr; Back to Screener
+				<Link href={backHref} className="font-bold hover:underline">
+					&larr; {backLabel}
 				</Link>
 			</div>
 
