@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LoadingState, Button, Card, CardContent } from "@/components/ui";
 import { ScreenerTable } from "@/components/screener/ScreenerTable";
@@ -10,6 +10,98 @@ import type { ScreenerMarket } from "@/lib/types";
 
 type SortField = keyof ScreenerMarket;
 type SortDir = "asc" | "desc";
+
+function formatCategoryLabel(value: string): string {
+	return value
+		.split(/[\s_-]+/)
+		.filter(Boolean)
+		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+		.join(" ");
+}
+
+interface CategoryDropdownProps {
+	categories: string[];
+	value: string;
+	onChange: (value: string) => void;
+}
+
+function CategoryDropdown({ categories, value, onChange }: CategoryDropdownProps) {
+	const [open, setOpen] = useState(false);
+	const rootRef = useRef<HTMLDivElement | null>(null);
+
+	useEffect(() => {
+		const onPointerDown = (event: PointerEvent) => {
+			if (!rootRef.current) return;
+			const target = event.target as Node | null;
+			if (target && !rootRef.current.contains(target)) {
+				setOpen(false);
+			}
+		};
+		const onKeyDown = (event: KeyboardEvent) => {
+			if (event.key === "Escape") setOpen(false);
+		};
+
+		document.addEventListener("pointerdown", onPointerDown);
+		document.addEventListener("keydown", onKeyDown);
+		return () => {
+			document.removeEventListener("pointerdown", onPointerDown);
+			document.removeEventListener("keydown", onKeyDown);
+		};
+	}, []);
+
+	const options = ["all", ...categories];
+	const selectedLabel =
+		value === "all" ? "All Categories" : formatCategoryLabel(value);
+
+	return (
+		<div ref={rootRef} className="relative">
+			<button
+				type="button"
+				onClick={() => setOpen((prev) => !prev)}
+				className="flex h-10 min-w-[190px] items-center justify-between border-2 border-foreground bg-background px-3 font-mono text-sm text-foreground transition-colors hover:bg-foreground hover:text-background"
+				aria-haspopup="listbox"
+				aria-expanded={open}
+			>
+				<span>{selectedLabel}</span>
+				<span className="text-xl leading-none" aria-hidden="true">
+					{open ? "▴" : "▾"}
+				</span>
+			</button>
+
+			{open && (
+				<div className="absolute left-0 top-full z-20 mt-1 min-w-full border-2 border-foreground bg-background">
+					<ul role="listbox" className="max-h-64 overflow-y-auto">
+						{options.map((option) => {
+							const isSelected = value === option;
+							const label =
+								option === "all" ? "All Categories" : formatCategoryLabel(option);
+							return (
+								<li key={option}>
+									<button
+										type="button"
+										role="option"
+										aria-selected={isSelected}
+										onClick={() => {
+											onChange(option);
+											setOpen(false);
+										}}
+										className={`w-full px-3 py-2 text-left font-mono text-sm ${
+											isSelected
+												? "bg-foreground text-background"
+												: "bg-background text-foreground hover:bg-foreground hover:text-background"
+										}`}
+									>
+										{label}
+									</button>
+								</li>
+							);
+						})}
+					</ul>
+				</div>
+			)}
+		</div>
+	);
+}
 
 function sortMarkets(
 	markets: ScreenerMarket[],
@@ -138,18 +230,11 @@ function ScreenerContent() {
 					placeholder="Search markets..."
 					className="border-2 border-foreground bg-background px-2 py-2 font-mono text-sm text-foreground placeholder:text-muted focus:outline-none"
 				/>
-				<select
+				<CategoryDropdown
+					categories={categories}
 					value={categoryFilter}
-					onChange={(e) => setCategoryFilter(e.target.value)}
-					className="border-2 border-foreground bg-background py-2 font-mono text-sm text-foreground focus:outline-none"
-				>
-					<option value="all">All Categories</option>
-					{categories.map((cat) => (
-						<option key={cat} value={cat}>
-							{cat}
-						</option>
-					))}
-				</select>
+					onChange={setCategoryFilter}
+				/>
 				{(search || categoryFilter !== "all") && (
 					<span className="text-sm text-muted">
 						{sortedMarkets.length} result{sortedMarkets.length !== 1 && "s"}

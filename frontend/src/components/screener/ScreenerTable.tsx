@@ -21,6 +21,14 @@ interface ScreenerTableProps {
 	onSort?: (field: string) => void;
 }
 
+function formatCategoryLabel(value: string): string {
+	return value
+		.split(/[\s_-]+/)
+		.filter(Boolean)
+		.map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+		.join(" ");
+}
+
 function SortableHeader({
 	field,
 	label,
@@ -44,7 +52,7 @@ function SortableHeader({
 			<span className="flex items-center gap-1">
 				{label}
 				{isActive && (
-					<span className="text-xs">{sortDir === "asc" ? "^" : "v"}</span>
+					<span className="text-xs">{sortDir === "asc" ? "↑" : "↓"}</span>
 				)}
 			</span>
 		</TableHead>
@@ -118,7 +126,9 @@ export function ScreenerTable({
 							</Link>
 						</TableCell>
 						<TableCell>
-							<Badge variant="muted">{market.category || "—"}</Badge>
+							<Badge>
+								{market.category ? formatCategoryLabel(market.category) : "—"}
+							</Badge>
 						</TableCell>
 						<TableCell>
 							<DivergenceBar divergence={market.divergence} />
