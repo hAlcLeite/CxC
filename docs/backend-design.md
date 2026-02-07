@@ -102,6 +102,8 @@ FastAPI endpoints (screener, market, wallet, alerts, backtest)
 - `maker_taker` (optional)
 - `raw_payload` (JSON string)
 
+The trades table is currently being used as a fallback for querying specific pre computed wallet data for the top drivers computed during the ingestion pipeline. For efficiency and low latency, where we are looking at static pre computed trades, the trades table is better than querying the live Polymarket API for live data.
+
 ### `outcomes`
 
 - `market_id` (PK/FK)
