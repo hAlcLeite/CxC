@@ -220,10 +220,15 @@ def _fetch_markets(closed: bool, total_limit: int, page_size: int = 200) -> list
     offset = 0
     while len(results) < total_limit:
         limit = min(page_size, total_limit - len(results))
-        rows = _http_get_json(
-            f"{GAMMA_BASE_URL}/markets",
-            {"closed": str(closed).lower(), "limit": limit, "offset": offset},
-        )
+        params = {
+            "closed": str(closed).lower(),
+            "limit": limit,
+            "offset": offset,
+        }
+        if closed:
+            params["order"] = "closedTime"
+            params["ascending"] = "false"
+        rows = _http_get_json(f"{GAMMA_BASE_URL}/markets", params)
         if not isinstance(rows, list) or not rows:
             LOGGER.info("fetch_markets: %s — no more rows at offset=%d", label, offset)
             break
@@ -498,6 +503,7 @@ def ingest_polymarket(
             continue
         resolved_outcome, resolution_time = inferred
         outcomes_payload.append((market_id, resolved_outcome, resolution_time))
+    LOGGER.info("outcomes: %d closed markets, %d resolved", len(fetched_closed), len(outcomes_payload))
     conn.executemany(
         """
         INSERT INTO outcomes (market_id, resolved_outcome, resolution_time)

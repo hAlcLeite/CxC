@@ -34,7 +34,7 @@ export function RunPipelineModal({ open, onClose }: RunPipelineModalProps) {
 						include_active_markets: true,
 						include_closed_markets: true,
 						active_markets_limit: 20,
-						closed_markets_limit: 10,
+						closed_markets_limit: 20,
 						trades_per_market: 500,
 						market_chunk_size: 1,
 					},
