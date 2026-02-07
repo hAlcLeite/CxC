@@ -81,6 +81,9 @@ CREATE TABLE IF NOT EXISTS smartcrowd_snapshots (
   integrity_risk REAL NOT NULL,
   active_wallets INTEGER NOT NULL,
   top_drivers TEXT NOT NULL,
+  cohort_summary TEXT NOT NULL DEFAULT '[]',
+  flip_conditions TEXT NOT NULL DEFAULT '[]',
+  explanation_json TEXT NOT NULL DEFAULT '{}',
   PRIMARY KEY (market_id, snapshot_time),
   FOREIGN KEY (market_id) REFERENCES markets(id) ON DELETE CASCADE
 );
@@ -102,12 +105,40 @@ CREATE TABLE IF NOT EXISTS backtest_reports (
   summary_json TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS ingestion_checkpoints (
+  source TEXT NOT NULL,
+  checkpoint_key TEXT NOT NULL,
+  last_timestamp INTEGER,
+  metadata_json TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (source, checkpoint_key)
+);
+
+CREATE TABLE IF NOT EXISTS pipeline_runs (
+  run_id TEXT PRIMARY KEY,
+  run_type TEXT NOT NULL,
+  status TEXT NOT NULL,
+  started_at TEXT NOT NULL,
+  finished_at TEXT,
+  duration_ms REAL,
+  metrics_json TEXT,
+  error_text TEXT
+);
+
+CREATE TABLE IF NOT EXISTS system_metrics (
+  metric_key TEXT PRIMARY KEY,
+  metric_value REAL NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_trades_market_ts ON trades(market_id, ts);
 CREATE INDEX IF NOT EXISTS idx_trades_wallet_ts ON trades(wallet, ts);
 CREATE INDEX IF NOT EXISTS idx_snapshots_market_time ON smartcrowd_snapshots(market_id, snapshot_time);
 CREATE INDEX IF NOT EXISTS idx_wallet_metrics_lookup ON wallet_metrics(wallet, category, horizon_bucket);
 CREATE INDEX IF NOT EXISTS idx_wallet_weights_lookup ON wallet_weights(wallet, category, horizon_bucket);
 CREATE INDEX IF NOT EXISTS idx_market_backtests_run ON market_backtests(run_id);
+CREATE INDEX IF NOT EXISTS idx_pipeline_runs_type_started ON pipeline_runs(run_type, started_at);
+CREATE INDEX IF NOT EXISTS idx_ingestion_checkpoints_source ON ingestion_checkpoints(source, checkpoint_key);
 """
 
 
@@ -124,8 +155,22 @@ def get_connection() -> sqlite3.Connection:
     return conn
 
 
+def _table_columns(conn: sqlite3.Connection, table_name: str) -> set[str]:
+    rows = conn.execute(f"PRAGMA table_info({table_name})").fetchall()
+    return {str(row["name"]) for row in rows}
+
+
+def _ensure_column(conn: sqlite3.Connection, table_name: str, column_name: str, column_spec: str) -> None:
+    columns = _table_columns(conn, table_name)
+    if column_name in columns:
+        return
+    conn.execute(f"ALTER TABLE {table_name} ADD COLUMN {column_name} {column_spec}")
+
+
 def init_db() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     with get_connection() as conn:
         conn.executescript(SCHEMA_SQL)
-
+        _ensure_column(conn, "smartcrowd_snapshots", "cohort_summary", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "smartcrowd_snapshots", "flip_conditions", "TEXT NOT NULL DEFAULT '[]'")
+        _ensure_column(conn, "smartcrowd_snapshots", "explanation_json", "TEXT NOT NULL DEFAULT '{}'")

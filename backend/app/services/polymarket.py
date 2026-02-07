@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from typing import Any
@@ -12,6 +13,27 @@ from app.db import now_utc_iso
 
 GAMMA_BASE_URL = "https://gamma-api.polymarket.com"
 DATA_BASE_URL = "https://data-api.polymarket.com"
+CHECKPOINT_SOURCE = "polymarket"
+TRADES_CHECKPOINT_KEY = "trades_global"
+LOGGER = logging.getLogger("smartcrowd.polymarket")
+
+ACTION_MAP = {
+    "BUY": "BUY",
+    "B": "BUY",
+    "BID": "BUY",
+    "TAKE": "BUY",
+    "TAKER_BUY": "BUY",
+    "LONG": "BUY",
+    "SELL": "SELL",
+    "S": "SELL",
+    "ASK": "SELL",
+    "MAKE": "SELL",
+    "MAKER_SELL": "SELL",
+    "SHORT": "SELL",
+}
+
+YES_ALIASES = {"yes", "y", "true", "up", "higher", "above", "for", "win"}
+NO_ALIASES = {"no", "n", "false", "down", "lower", "below", "against", "lose"}
 
 
 def _to_iso_datetime(value: Any) -> str | None:
@@ -40,6 +62,27 @@ def _to_iso_datetime(value: Any) -> str | None:
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.astimezone(timezone.utc).isoformat()
+
+
+def _to_unix_timestamp(value: Any) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, (int, float)):
+        return int(float(value))
+    raw = str(value).strip()
+    if not raw:
+        return None
+    try:
+        return int(float(raw))
+    except (TypeError, ValueError):
+        pass
+    iso_ts = _to_iso_datetime(raw)
+    if iso_ts is None:
+        return None
+    dt = datetime.fromisoformat(iso_ts)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return int(dt.timestamp())
 
 
 def _to_float(value: Any, default: float = 0.0) -> float:
@@ -75,6 +118,63 @@ def _http_get_json(url: str, params: dict[str, Any] | None = None, timeout: int 
     with urlopen(req, timeout=timeout) as resp:
         payload = resp.read().decode("utf-8")
     return json.loads(payload)
+
+
+def _load_checkpoint(conn: sqlite3.Connection, source: str, checkpoint_key: str) -> dict[str, Any] | None:
+    row = conn.execute(
+        """
+        SELECT last_timestamp, metadata_json, updated_at
+        FROM ingestion_checkpoints
+        WHERE source = ? AND checkpoint_key = ?
+        """,
+        (source, checkpoint_key),
+    ).fetchone()
+    if not row:
+        return None
+    metadata = {}
+    if row["metadata_json"]:
+        try:
+            metadata = json.loads(row["metadata_json"])
+        except json.JSONDecodeError:
+            metadata = {}
+    return {
+        "last_timestamp": int(row["last_timestamp"]) if row["last_timestamp"] is not None else None,
+        "metadata": metadata,
+        "updated_at": row["updated_at"],
+    }
+
+
+def _upsert_checkpoint(
+    conn: sqlite3.Connection,
+    source: str,
+    checkpoint_key: str,
+    last_timestamp: int | None,
+    metadata: dict[str, Any] | None = None,
+) -> None:
+    conn.execute(
+        """
+        INSERT INTO ingestion_checkpoints (source, checkpoint_key, last_timestamp, metadata_json, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(source, checkpoint_key) DO UPDATE SET
+          last_timestamp = excluded.last_timestamp,
+          metadata_json = excluded.metadata_json,
+          updated_at = excluded.updated_at
+        """,
+        (
+            source,
+            checkpoint_key,
+            last_timestamp,
+            json.dumps(metadata or {}),
+            now_utc_iso(),
+        ),
+    )
+
+
+def _delete_checkpoint(conn: sqlite3.Connection, source: str, checkpoint_key: str) -> None:
+    conn.execute(
+        "DELETE FROM ingestion_checkpoints WHERE source = ? AND checkpoint_key = ?",
+        (source, checkpoint_key),
+    )
 
 
 def _fetch_markets(closed: bool, total_limit: int, page_size: int = 200) -> list[dict]:
@@ -120,7 +220,81 @@ def _infer_binary_resolution(market_row: dict, threshold: float = 0.97) -> tuple
     return resolved_outcome, resolution_time
 
 
-def _normalize_trade_row(trade: dict, market_by_condition: dict[str, dict]) -> tuple | None:
+def _normalize_action(value: Any) -> str | None:
+    if value is None:
+        return None
+    raw = str(value).strip().upper()
+    if not raw:
+        return None
+    return ACTION_MAP.get(raw)
+
+
+def _normalize_wallet(value: Any) -> str | None:
+    if value is None:
+        return None
+    wallet = str(value).strip().lower()
+    if not wallet:
+        return None
+    return wallet
+
+
+def _extract_wallet(trade: dict[str, Any]) -> str | None:
+    for key in ("proxyWallet", "wallet", "walletAddress", "takerAddress", "makerAddress", "user", "owner"):
+        wallet = _normalize_wallet(trade.get(key))
+        if wallet:
+            return wallet
+    return None
+
+
+def _normalize_maker_taker(trade: dict[str, Any], wallet: str, action: str) -> str | None:
+    for key in ("maker_taker", "makerTaker", "liquidityFlag", "liquidity"):
+        raw = trade.get(key)
+        if raw is None:
+            continue
+        val = str(raw).strip().lower()
+        if "maker" in val:
+            return "maker"
+        if "taker" in val:
+            return "taker"
+
+    maker = _normalize_wallet(trade.get("makerAddress"))
+    taker = _normalize_wallet(trade.get("takerAddress"))
+    if wallet and maker and wallet == maker:
+        return "maker"
+    if wallet and taker and wallet == taker:
+        return "taker"
+    if action == "BUY":
+        return "taker"
+    return None
+
+
+def _resolve_outcome_index(trade: dict[str, Any], market: dict[str, Any]) -> int | None:
+    raw_idx = trade.get("outcomeIndex")
+    if raw_idx is not None:
+        try:
+            idx = int(raw_idx)
+        except (TypeError, ValueError):
+            idx = None
+        if idx in (0, 1):
+            return idx
+
+    outcome_label = str(trade.get("outcome") or "").strip().lower()
+    if not outcome_label:
+        return None
+
+    outcomes: list[str] = market.get("outcomes", [])
+    for i, label in enumerate(outcomes[:2]):
+        if outcome_label == str(label).strip().lower():
+            return i
+
+    if outcome_label in YES_ALIASES:
+        return 0
+    if outcome_label in NO_ALIASES:
+        return 1
+    return None
+
+
+def _normalize_trade_row(trade: dict, market_by_condition: dict[str, dict]) -> tuple[tuple, int] | None:
     condition_id = str(trade.get("conditionId") or "").strip().lower()
     if not condition_id:
         return None
@@ -128,28 +302,20 @@ def _normalize_trade_row(trade: dict, market_by_condition: dict[str, dict]) -> t
     if market is None:
         return None
 
-    outcome_index = trade.get("outcomeIndex")
-    if outcome_index is None:
+    idx = _resolve_outcome_index(trade, market)
+    if idx is None:
         return None
-    try:
-        idx = int(outcome_index)
-    except (TypeError, ValueError):
-        return None
-    if idx not in (0, 1):
-        return None
-
-    wallet = str(trade.get("proxyWallet") or "").strip().lower()
+    wallet = _extract_wallet(trade)
     if not wallet:
         return None
 
-    timestamp_iso = _to_iso_datetime(trade.get("timestamp"))
-    if timestamp_iso is None:
+    timestamp_int = _to_unix_timestamp(trade.get("timestamp") or trade.get("time"))
+    if timestamp_int is None:
         return None
+    timestamp_iso = datetime.fromtimestamp(timestamp_int, tz=timezone.utc).isoformat()
 
     side = "YES" if idx == 0 else "NO"
-    action = str(trade.get("side") or "BUY").upper()
-    if action not in {"BUY", "SELL"}:
-        action = "BUY"
+    action = _normalize_action(trade.get("side")) or _normalize_action(trade.get("action")) or "BUY"
     price = _to_float(trade.get("price"), default=-1.0)
     size = _to_float(trade.get("size"), default=-1.0)
     if not (0.0 <= price <= 1.0) or size <= 0:
@@ -171,20 +337,23 @@ def _normalize_trade_row(trade: dict, market_by_condition: dict[str, dict]) -> t
         ]
     )
     external_id = hashlib.sha1(unique_material.encode("utf-8")).hexdigest()
-    maker_taker = "taker" if action == "BUY" else "maker"
+    maker_taker = _normalize_maker_taker(trade, wallet, action)
 
     return (
-        external_id,
-        str(market["id"]),
-        wallet,
-        timestamp_iso,
-        side,
-        action,
-        price,
-        size,
-        None,
-        maker_taker,
-        json.dumps(trade, separators=(",", ":"), sort_keys=True),
+        (
+            external_id,
+            str(market["id"]),
+            wallet,
+            timestamp_iso,
+            side,
+            action,
+            price,
+            size,
+            None,
+            maker_taker,
+            json.dumps(trade, separators=(",", ":"), sort_keys=True),
+        ),
+        timestamp_int,
     )
 
 
@@ -200,7 +369,23 @@ def ingest_polymarket(
     taker_only: bool = False,
     min_trade_timestamp: int | None = None,
     max_trade_timestamp: int | None = None,
-) -> dict[str, int]:
+    use_incremental_checkpoint: bool = True,
+    checkpoint_lookback_seconds: int = 300,
+    reset_checkpoint: bool = False,
+) -> dict[str, Any]:
+    if reset_checkpoint:
+        _delete_checkpoint(conn, CHECKPOINT_SOURCE, TRADES_CHECKPOINT_KEY)
+
+    checkpoint_before = _load_checkpoint(conn, CHECKPOINT_SOURCE, TRADES_CHECKPOINT_KEY)
+    checkpoint_last_ts_before = checkpoint_before["last_timestamp"] if checkpoint_before else None
+    effective_min_trade_timestamp = min_trade_timestamp
+    if (
+        effective_min_trade_timestamp is None
+        and use_incremental_checkpoint
+        and checkpoint_last_ts_before is not None
+    ):
+        effective_min_trade_timestamp = max(0, checkpoint_last_ts_before - max(checkpoint_lookback_seconds, 0))
+
     fetched_active = _fetch_markets(closed=False, total_limit=active_markets_limit) if include_active_markets else []
     fetched_closed = _fetch_markets(closed=True, total_limit=closed_markets_limit) if include_closed_markets else []
     fetched_markets = fetched_active + fetched_closed
@@ -214,6 +399,7 @@ def ingest_polymarket(
         end_time = _to_iso_datetime(market.get("endDate"))
         if not market_id or not condition_id or not end_time:
             continue
+        outcomes = [str(x).strip() for x in _load_jsonish_list(market.get("outcomes"))]
         normalized = {
             "id": market_id,
             "condition_id": condition_id,
@@ -225,6 +411,7 @@ def ingest_polymarket(
             ),
             "resolution_source": str(market.get("resolutionSource") or "").strip(),
             "end_time": end_time,
+            "outcomes": outcomes,
         }
         market_by_condition[condition_id] = normalized
         known_market_ids.add(market_id)
@@ -279,6 +466,8 @@ def ingest_polymarket(
     trade_rows: list[tuple] = []
     skipped = 0
     trades_fetched = 0
+    max_trade_timestamp_seen: int | None = None
+    skipped_by_reason: dict[str, int] = {"unmapped": 0}
     for start in range(0, len(condition_ids), market_chunk_size):
         chunk = condition_ids[start : start + market_chunk_size]
         if not chunk:
@@ -295,8 +484,8 @@ def ingest_polymarket(
                 "market": market_param,
                 "takerOnly": str(taker_only).lower(),
             }
-            if min_trade_timestamp is not None:
-                params["timestamp_start"] = min_trade_timestamp
+            if effective_min_trade_timestamp is not None:
+                params["timestamp_start"] = effective_min_trade_timestamp
             if max_trade_timestamp is not None:
                 params["timestamp_end"] = max_trade_timestamp
             page = _http_get_json(f"{DATA_BASE_URL}/trades", params=params)
@@ -306,8 +495,12 @@ def ingest_polymarket(
                 normalized = _normalize_trade_row(tr, market_by_condition)
                 if normalized is None:
                     skipped += 1
+                    skipped_by_reason["unmapped"] = skipped_by_reason.get("unmapped", 0) + 1
                     continue
-                trade_rows.append(normalized)
+                payload, ts_int = normalized
+                trade_rows.append(payload)
+                if max_trade_timestamp_seen is None or ts_int > max_trade_timestamp_seen:
+                    max_trade_timestamp_seen = ts_int
             fetched = len(page)
             trades_fetched += fetched
             chunk_fetched += fetched
@@ -329,7 +522,24 @@ def ingest_polymarket(
     )
     inserted = conn.total_changes - before
 
-    return {
+    checkpoint_after = checkpoint_last_ts_before
+    if use_incremental_checkpoint and max_trade_timestamp_seen is not None:
+        checkpoint_after = max(max_trade_timestamp_seen, checkpoint_last_ts_before or 0)
+        _upsert_checkpoint(
+            conn,
+            CHECKPOINT_SOURCE,
+            TRADES_CHECKPOINT_KEY,
+            checkpoint_after,
+            metadata={
+                "effective_min_trade_timestamp": effective_min_trade_timestamp,
+                "requested_min_trade_timestamp": min_trade_timestamp,
+                "requested_max_trade_timestamp": max_trade_timestamp,
+                "trades_fetched": trades_fetched,
+                "trades_inserted": inserted,
+            },
+        )
+
+    result = {
         "markets_fetched_active": len(fetched_active),
         "markets_fetched_closed": len(fetched_closed),
         "markets_upserted": len(markets_payload),
@@ -338,4 +548,12 @@ def ingest_polymarket(
         "trades_fetched": trades_fetched,
         "trades_inserted": inserted,
         "trades_skipped": skipped,
+        "trades_skipped_unmapped": skipped_by_reason.get("unmapped", 0),
+        "checkpoint_used": bool(use_incremental_checkpoint and min_trade_timestamp is None),
+        "checkpoint_last_timestamp_before": checkpoint_last_ts_before,
+        "checkpoint_last_timestamp_after": checkpoint_after,
+        "effective_min_trade_timestamp": effective_min_trade_timestamp,
+        "max_trade_timestamp_seen": max_trade_timestamp_seen,
     }
+    LOGGER.info("polymarket_ingest_summary=%s", json.dumps(result, sort_keys=True))
+    return result

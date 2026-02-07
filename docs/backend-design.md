@@ -17,6 +17,8 @@ The system ingests market/trade/outcome data, profiles wallets, computes trust w
   - CSV files (`/ingest/csv`)
   - Live Polymarket APIs (`/ingest/polymarket`)
 - SQLite storage for markets, trades, outcomes, wallet metrics, weights, snapshots, backtests
+- Incremental ingestion checkpoints for resumable live sync
+- Observability primitives (run history + metrics counters)
 - Wallet feature computation:
   - Brier/log-loss calibration and quality metrics
   - style/behavior signals (churn, persistence, trade size, timing)
@@ -72,6 +74,7 @@ FastAPI endpoints (screener, market, wallet, alerts, backtest)
 - `backend/app/services/backtest.py`: evaluation pipeline
 - `backend/app/services/pipeline.py`: recompute orchestration
 - `backend/scripts/load_polymarket.py`: CLI for live ingest
+- `backend/scripts/sync_runner.py`: periodic sync worker with lock + cycle scheduling
 - `backend/scripts/seed_demo_data.py`: demo data generator/loader
 
 ## 5) Data Model
@@ -112,6 +115,9 @@ FastAPI endpoints (screener, market, wallet, alerts, backtest)
 - `smartcrowd_snapshots`: per-market signal state at snapshot time
 - `market_backtests`: per-market backtest rows
 - `backtest_reports`: aggregate backtest summary JSON
+- `ingestion_checkpoints`: incremental sync state (`last_timestamp` + metadata)
+- `pipeline_runs`: run history table (status, duration, metrics, errors)
+- `system_metrics`: counters/latency aggregates
 
 ## 6) Ingestion Design
 
@@ -137,8 +143,13 @@ FastAPI endpoints (screener, market, wallet, alerts, backtest)
 4. Pull trades from Data API `/trades` in market chunks with paging
 5. Map Polymarket payload to internal trade format:
    - `outcomeIndex 0 -> YES`, `1 -> NO`
-   - normalize wallet, timestamp, side/action, price/size
+   - robust normalize wallet, timestamp, side/action, price/size
+   - fallback outcome resolution via outcome labels when `outcomeIndex` is missing
    - generate idempotent `external_id` hash
+
+6. Incremental checkpoint behavior:
+   - store latest ingested trade timestamp in `ingestion_checkpoints`
+   - next run sets `timestamp_start` using checkpoint minus lookback window
 
 ### Idempotency
 
@@ -235,6 +246,9 @@ Additional outputs:
 - `integrity_risk` (concentration + churn proxy)
 - `confidence` (support x agreement x participation x integrity adjustment)
 - `top_drivers` wallets by absolute contribution
+- `cohort_summary` (cohort-level contribution and participation)
+- `flip_conditions` (what evidence/flow would likely flip signal)
+- `explanation_json` (structured explanation artifacts)
 
 ## 11) Manipulation and Noise Controls
 
@@ -280,6 +294,8 @@ Persistence:
 - `POST /backtest`
 - `GET /backtest/{run_id}`
 - `GET /alerts`
+- `GET /ops/runs`
+- `GET /ops/metrics`
 
 ## 14) Operational Runbook
 
@@ -296,6 +312,12 @@ pip install -e .
 
 ```powershell
 .\.venv\Scripts\python.exe .\scripts\load_polymarket.py --run-backtest
+```
+
+### Periodic sync worker
+
+```powershell
+.\.venv\Scripts\python.exe .\scripts\sync_runner.py --interval-seconds 300 --run-backtest-every-cycles 12
 ```
 
 ### Serve API
@@ -326,8 +348,7 @@ uvicorn app.main:app --reload --port 8000
 ## 17) Next Phase Recommendations
 
 1. Replace inferred outcomes with authoritative resolved outcomes feed.
-2. Add incremental sync checkpoints (`last_timestamp`, `last_offset`) for ingestion jobs.
+2. Expand incremental checkpoints from global timestamp to per-market/per-condition cursors.
 3. Add job scheduler/queue for periodic recompute and backtest.
 4. Add richer microstructure/anomaly features (cancel/fill, impact without volume).
 5. Add cohort clustering and lead-lag graph for explanation quality.
-

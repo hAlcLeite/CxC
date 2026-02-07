@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import logging
 import sqlite3
+import time
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import datetime
@@ -22,6 +24,13 @@ from app.schemas import (
 from app.services.backtest import run_backtest
 from app.services.beliefs import yes_direction
 from app.services.ingest import ingest_markets, ingest_outcomes, ingest_trades
+from app.services.observability import (
+    fetch_recent_runs,
+    fetch_system_metrics,
+    finish_pipeline_run,
+    increment_metric,
+    start_pipeline_run,
+)
 from app.services.pipeline import recompute_pipeline
 from app.services.polymarket import ingest_polymarket
 from app.services.smartcrowd import build_market_snapshot, latest_screener_rows
@@ -29,6 +38,7 @@ from app.services.smartcrowd import build_market_snapshot, latest_screener_rows
 
 def create_app() -> FastAPI:
     app = FastAPI(title="SmartCrowd Backend MVP", version="0.1.0")
+    logger = logging.getLogger("smartcrowd.api")
 
     @app.on_event("startup")
     def _startup() -> None:
@@ -46,6 +56,28 @@ def create_app() -> FastAPI:
         with _conn_ctx() as conn:
             yield conn
 
+    @app.middleware("http")
+    async def request_logging_middleware(request, call_next):
+        started = time.perf_counter()
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            route = request.scope.get("route")
+            route_path = getattr(route, "path", request.url.path)
+            payload = {
+                "event": "http_request",
+                "method": request.method,
+                "path": request.url.path,
+                "route": route_path,
+                "status_code": status_code,
+                "duration_ms": round(duration_ms, 3),
+            }
+            logger.info(json.dumps(payload, separators=(",", ":"), sort_keys=True))
+
     @app.get("/health", response_model=HealthResponse)
     def health() -> HealthResponse:
         return HealthResponse(status="ok")
@@ -55,18 +87,50 @@ def create_app() -> FastAPI:
         if not req.markets_path and not req.trades_path and not req.outcomes_path:
             raise HTTPException(status_code=400, detail="Provide at least one CSV path.")
 
-        ingested: dict[str, int] = {}
         with conn:
-            if req.markets_path:
-                ingested["markets"] = ingest_markets(conn, req.markets_path)
-            if req.trades_path:
-                trade_result = ingest_trades(conn, req.trades_path)
-                ingested["trades_inserted"] = trade_result["inserted"]
-                ingested["trades_skipped"] = trade_result["skipped"]
-            if req.outcomes_path:
-                ingested["outcomes"] = ingest_outcomes(conn, req.outcomes_path)
+            run_id = start_pipeline_run(
+                conn,
+                "ingest_csv",
+                metadata={
+                    "markets_path": bool(req.markets_path),
+                    "trades_path": bool(req.trades_path),
+                    "outcomes_path": bool(req.outcomes_path),
+                },
+            )
+        started = time.perf_counter()
+        ingested: dict[str, int] = {}
+        try:
+            with conn:
+                if req.markets_path:
+                    ingested["markets"] = ingest_markets(conn, req.markets_path)
+                if req.trades_path:
+                    trade_result = ingest_trades(conn, req.trades_path)
+                    ingested["trades_inserted"] = trade_result["inserted"]
+                    ingested["trades_skipped"] = trade_result["skipped"]
+                if req.outcomes_path:
+                    ingested["outcomes"] = ingest_outcomes(conn, req.outcomes_path)
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            with conn:
+                finish_pipeline_run(
+                    conn,
+                    run_id,
+                    "success",
+                    metrics={"ingested": ingested, "duration_ms": duration_ms},
+                )
+            return IngestResponse(ingested=ingested, db_path=str(DB_PATH))
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            with conn:
+                finish_pipeline_run(
+                    conn,
+                    run_id,
+                    "failed",
+                    metrics={"duration_ms": duration_ms},
+                    error_text=str(exc),
+                )
+                increment_metric(conn, "errors.ingest_csv", 1.0)
+            raise
 
-        return IngestResponse(ingested=ingested, db_path=str(DB_PATH))
 
     @app.post("/ingest/polymarket", response_model=GenericResponse)
     def ingest_live_polymarket(
@@ -75,40 +139,112 @@ def create_app() -> FastAPI:
         conn: sqlite3.Connection = Depends(get_conn),
     ) -> GenericResponse:
         with conn:
-            ingest_result = ingest_polymarket(
+            run_id = start_pipeline_run(
                 conn,
-                include_active_markets=req.include_active_markets,
-                include_closed_markets=req.include_closed_markets,
-                active_markets_limit=req.active_markets_limit,
-                closed_markets_limit=req.closed_markets_limit,
-                trades_per_market=req.trades_per_market,
-                trade_page_size=req.trade_page_size,
-                market_chunk_size=req.market_chunk_size,
-                taker_only=req.taker_only,
-                min_trade_timestamp=req.min_trade_timestamp,
-                max_trade_timestamp=req.max_trade_timestamp,
+                "ingest_polymarket",
+                metadata={
+                    "run_recompute": run_recompute,
+                    "active_markets_limit": req.active_markets_limit,
+                    "closed_markets_limit": req.closed_markets_limit,
+                    "trades_per_market": req.trades_per_market,
+                    "trade_page_size": req.trade_page_size,
+                    "market_chunk_size": req.market_chunk_size,
+                    "use_incremental_checkpoint": req.use_incremental_checkpoint,
+                },
             )
-            pipeline_result: dict[str, int] | None = None
-            if run_recompute:
-                pipeline_result = recompute_pipeline(conn, include_resolved_snapshots=True)
-        return GenericResponse(
-            result={
-                "source": "polymarket_api",
-                "ingest": ingest_result,
-                "pipeline": pipeline_result,
-                "db_path": str(DB_PATH),
-            }
-        )
+        started = time.perf_counter()
+        try:
+            with conn:
+                ingest_result = ingest_polymarket(
+                    conn,
+                    include_active_markets=req.include_active_markets,
+                    include_closed_markets=req.include_closed_markets,
+                    active_markets_limit=req.active_markets_limit,
+                    closed_markets_limit=req.closed_markets_limit,
+                    trades_per_market=req.trades_per_market,
+                    trade_page_size=req.trade_page_size,
+                    market_chunk_size=req.market_chunk_size,
+                    taker_only=req.taker_only,
+                    min_trade_timestamp=req.min_trade_timestamp,
+                    max_trade_timestamp=req.max_trade_timestamp,
+                    use_incremental_checkpoint=req.use_incremental_checkpoint,
+                    checkpoint_lookback_seconds=req.checkpoint_lookback_seconds,
+                    reset_checkpoint=req.reset_checkpoint,
+                )
+                pipeline_result: dict[str, int] | None = None
+                if run_recompute:
+                    pipeline_result = recompute_pipeline(conn, include_resolved_snapshots=True)
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            with conn:
+                finish_pipeline_run(
+                    conn,
+                    run_id,
+                    "success",
+                    metrics={
+                        "ingest": ingest_result,
+                        "pipeline": pipeline_result or {},
+                        "duration_ms": duration_ms,
+                    },
+                )
+            return GenericResponse(
+                result={
+                    "source": "polymarket_api",
+                    "run_id": run_id,
+                    "ingest": ingest_result,
+                    "pipeline": pipeline_result,
+                    "db_path": str(DB_PATH),
+                }
+            )
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            with conn:
+                finish_pipeline_run(
+                    conn,
+                    run_id,
+                    "failed",
+                    metrics={"duration_ms": duration_ms},
+                    error_text=str(exc),
+                )
+                increment_metric(conn, "errors.ingest_polymarket", 1.0)
+            raise
 
     @app.post("/pipeline/recompute", response_model=GenericResponse)
     def recompute(req: RecomputeRequest, conn: sqlite3.Connection = Depends(get_conn)) -> GenericResponse:
         with conn:
-            result = recompute_pipeline(
+            run_id = start_pipeline_run(
                 conn,
-                snapshot_time=req.snapshot_time,
-                include_resolved_snapshots=req.include_resolved_snapshots,
+                "recompute",
+                metadata={"include_resolved_snapshots": req.include_resolved_snapshots},
             )
-        return GenericResponse(result=result)
+        started = time.perf_counter()
+        try:
+            with conn:
+                result = recompute_pipeline(
+                    conn,
+                    snapshot_time=req.snapshot_time,
+                    include_resolved_snapshots=req.include_resolved_snapshots,
+                )
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            with conn:
+                finish_pipeline_run(
+                    conn,
+                    run_id,
+                    "success",
+                    metrics={"result": result, "duration_ms": duration_ms},
+                )
+            return GenericResponse(result={"run_id": run_id, **result})
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            with conn:
+                finish_pipeline_run(
+                    conn,
+                    run_id,
+                    "failed",
+                    metrics={"duration_ms": duration_ms},
+                    error_text=str(exc),
+                )
+                increment_metric(conn, "errors.recompute", 1.0)
+            raise
 
     @app.get("/screener", response_model=GenericResponse)
     def screener(
@@ -120,6 +256,7 @@ def create_app() -> FastAPI:
         payload = []
         for row in rows:
             top_drivers = json.loads(row["top_drivers"]) if row["top_drivers"] else []
+            cohort_summary = json.loads(row["cohort_summary"]) if row["cohort_summary"] else []
             payload.append(
                 {
                     "market_id": row["market_id"],
@@ -136,6 +273,7 @@ def create_app() -> FastAPI:
                     "integrity_risk": row["integrity_risk"],
                     "active_wallets": row["active_wallets"],
                     "top_drivers": top_drivers[:5],
+                    "top_cohorts": cohort_summary[:3],
                 }
             )
         return GenericResponse(result={"count": len(payload), "markets": payload})
@@ -209,16 +347,18 @@ def create_app() -> FastAPI:
         market_prob = float(latest["market_prob"])
         confidence = float(latest["confidence"])
         top_drivers = json.loads(latest["top_drivers"]) if latest["top_drivers"] else []
+        explanation_artifacts = json.loads(latest["explanation_json"]) if latest["explanation_json"] else {}
         if smart_prob > market_prob:
             directional = "net buying YES"
         elif smart_prob < market_prob:
             directional = "net buying NO"
         else:
             directional = "balanced flow"
-        explanation = (
+        fallback_explanation = (
             f"Market implied is {market_prob:.3f}, SmartCrowd is {smart_prob:.3f} with "
             f"confidence {confidence:.2f}, driven by trusted cohorts {directional}."
         )
+        explanation = explanation_artifacts.get("summary", fallback_explanation) if explanation_artifacts else fallback_explanation
 
         return GenericResponse(
             result={
@@ -240,6 +380,9 @@ def create_app() -> FastAPI:
                     "integrity_risk": latest["integrity_risk"],
                     "active_wallets": latest["active_wallets"],
                     "top_drivers": top_drivers,
+                    "cohort_summary": json.loads(latest["cohort_summary"]) if latest["cohort_summary"] else [],
+                    "flip_conditions": json.loads(latest["flip_conditions"]) if latest["flip_conditions"] else [],
+                    "explanation_artifacts": explanation_artifacts,
                 },
                 "time_series": [dict(row) for row in reversed(time_series)],
                 "flow_summary": {"net_yes_flow_size": net_yes_flow, "trade_count": len(trade_rows)},
@@ -282,8 +425,40 @@ def create_app() -> FastAPI:
     @app.post("/backtest", response_model=GenericResponse)
     def backtest(req: BacktestRequest, conn: sqlite3.Connection = Depends(get_conn)) -> GenericResponse:
         with conn:
-            summary = run_backtest(conn, cutoff_hours=req.cutoff_hours, run_id=req.run_id)
-        return GenericResponse(result=summary)
+            run_track_id = start_pipeline_run(
+                conn,
+                "backtest",
+                metadata={"cutoff_hours": req.cutoff_hours, "requested_run_id": req.run_id},
+            )
+        started = time.perf_counter()
+        try:
+            with conn:
+                summary = run_backtest(conn, cutoff_hours=req.cutoff_hours, run_id=req.run_id)
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            with conn:
+                finish_pipeline_run(
+                    conn,
+                    run_track_id,
+                    "success",
+                    metrics={
+                        "run_id": summary.get("run_id"),
+                        "markets_evaluated": summary.get("markets_evaluated"),
+                        "duration_ms": duration_ms,
+                    },
+                )
+            return GenericResponse(result={"tracking_run_id": run_track_id, **summary})
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            with conn:
+                finish_pipeline_run(
+                    conn,
+                    run_track_id,
+                    "failed",
+                    metrics={"duration_ms": duration_ms},
+                    error_text=str(exc),
+                )
+                increment_metric(conn, "errors.backtest", 1.0)
+            raise
 
     @app.get("/backtest/{run_id}", response_model=GenericResponse)
     def get_backtest(run_id: str, conn: sqlite3.Connection = Depends(get_conn)) -> GenericResponse:
@@ -382,5 +557,17 @@ def create_app() -> FastAPI:
         for alert in alerts_payload:
             grouped[alert["type"]].append(alert)
         return GenericResponse(result={"count": len(alerts_payload), "alerts": alerts_payload, "by_type": grouped})
+
+    @app.get("/ops/runs", response_model=GenericResponse)
+    def ops_runs(
+        limit: int = Query(default=50, ge=1, le=500),
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> GenericResponse:
+        runs = fetch_recent_runs(conn, limit=limit)
+        return GenericResponse(result={"count": len(runs), "runs": runs})
+
+    @app.get("/ops/metrics", response_model=GenericResponse)
+    def ops_metrics(conn: sqlite3.Connection = Depends(get_conn)) -> GenericResponse:
+        return GenericResponse(result={"metrics": fetch_system_metrics(conn)})
 
     return app

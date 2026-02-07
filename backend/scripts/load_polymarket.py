@@ -25,6 +25,9 @@ def main() -> None:
     parser.add_argument("--taker-only", action="store_true")
     parser.add_argument("--min-trade-timestamp", type=int, default=None)
     parser.add_argument("--max-trade-timestamp", type=int, default=None)
+    parser.add_argument("--no-incremental-checkpoint", action="store_true")
+    parser.add_argument("--checkpoint-lookback-seconds", type=int, default=300)
+    parser.add_argument("--reset-checkpoint", action="store_true")
     parser.add_argument("--skip-recompute", action="store_true")
     parser.add_argument("--run-backtest", action="store_true")
     args = parser.parse_args()
@@ -44,6 +47,9 @@ def main() -> None:
                 taker_only=args.taker_only,
                 min_trade_timestamp=args.min_trade_timestamp,
                 max_trade_timestamp=args.max_trade_timestamp,
+                use_incremental_checkpoint=not args.no_incremental_checkpoint,
+                checkpoint_lookback_seconds=args.checkpoint_lookback_seconds,
+                reset_checkpoint=args.reset_checkpoint,
             )
             print("Ingest:", ingest_result)
 
@@ -66,4 +72,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

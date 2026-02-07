@@ -30,6 +30,12 @@ To pull real Polymarket data directly:
 python scripts/load_polymarket.py --run-backtest
 ```
 
+To run periodic sync worker (ingest + recompute every 5 min):
+
+```powershell
+python scripts/sync_runner.py --interval-seconds 300
+```
+
 ## CSV Ingestion Format
 
 ### `markets.csv`
@@ -68,6 +74,8 @@ python scripts/load_polymarket.py --run-backtest
 - `POST /backtest`
 - `GET /backtest/{run_id}`
 - `GET /alerts`
+- `GET /ops/runs`
+- `GET /ops/metrics`
 
 ## Live Polymarket Ingestion
 
@@ -84,7 +92,10 @@ curl -X POST "http://localhost:8000/ingest/polymarket?run_recompute=true" \
     "trades_per_market": 300,
     "trade_page_size": 200,
     "market_chunk_size": 10,
-    "taker_only": false
+    "taker_only": false,
+    "use_incremental_checkpoint": true,
+    "checkpoint_lookback_seconds": 300,
+    "reset_checkpoint": false
   }'
 ```
 
@@ -92,3 +103,34 @@ Notes:
 - Markets come from `https://gamma-api.polymarket.com/markets`.
 - Trades come from `https://data-api.polymarket.com/trades`.
 - Outcomes are inferred for closed binary markets when one final outcome price is near 1.0.
+- Incremental mode stores the latest trade timestamp checkpoint in SQLite (`ingestion_checkpoints`).
+
+## Incremental Sync Tips
+
+- First run:
+  - `python scripts/load_polymarket.py --run-backtest`
+- Next runs (faster incremental):
+  - same command, checkpoint is used automatically
+- Force full trade backfill:
+  - `python scripts/load_polymarket.py --no-incremental-checkpoint`
+- Reset checkpoint:
+  - `python scripts/load_polymarket.py --reset-checkpoint`
+
+## Scheduled Sync Runner
+
+Run a single cycle (good for smoke test):
+
+```powershell
+python scripts/sync_runner.py --once --active-markets-limit 10 --closed-markets-limit 10 --trades-per-market 40
+```
+
+Run continuously with backtest every 12 cycles:
+
+```powershell
+python scripts/sync_runner.py --interval-seconds 300 --run-backtest-every-cycles 12
+```
+
+Notes:
+- Uses lock file `backend/data/sync_runner.lock` to avoid concurrent writer runners.
+- You can override lock path with `--lock-file`.
+- `pipeline_runs` captures each cycle as `run_type=scheduled_sync`.

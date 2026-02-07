@@ -23,6 +23,9 @@ class PolymarketIngestRequest(BaseModel):
     taker_only: bool = False
     min_trade_timestamp: int | None = Field(default=None, ge=0)
     max_trade_timestamp: int | None = Field(default=None, ge=0)
+    use_incremental_checkpoint: bool = True
+    checkpoint_lookback_seconds: int = Field(default=300, ge=0, le=86400)
+    reset_checkpoint: bool = False
 
 
 class RecomputeRequest(BaseModel):
