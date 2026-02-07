@@ -3,9 +3,12 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import random
 import sqlite3
+import time
 from datetime import datetime, timezone
 from typing import Any
+from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
@@ -111,19 +114,44 @@ def _load_jsonish_list(value: Any) -> list[Any]:
     return []
 
 
+_RETRYABLE_HTTP_CODES = {429, 502, 503}
+_MAX_RETRIES = 3
+_BASE_DELAY = 1.0  # seconds
+
+
 def _http_get_json(url: str, params: dict[str, Any] | None = None, timeout: int = 30) -> Any:
     query = urlencode({k: v for k, v in (params or {}).items() if v is not None})
     full_url = f"{url}?{query}" if query else url
-    req = Request(full_url, headers={"User-Agent": "smartcrowd-backend/0.1"})
-    LOGGER.debug("HTTP GET %s", full_url)
-    try:
-        with urlopen(req, timeout=timeout) as resp:
-            payload = resp.read().decode("utf-8")
-        return json.loads(payload)
-    except Exception as exc:
-        LOGGER.error("HTTP GET failed url=%s error=%s", full_url, exc)
-        raise
->>>>>>> c3ddfe9 (fix: graceful error handling instead of catching at CORS level)
+
+    for attempt in range(1, _MAX_RETRIES + 1):
+        req = Request(full_url, headers={"User-Agent": "smartcrowd-backend/0.1"})
+        LOGGER.debug("HTTP GET attempt=%d/%d %s", attempt, _MAX_RETRIES, full_url)
+        try:
+            with urlopen(req, timeout=timeout) as resp:
+                payload = resp.read().decode("utf-8")
+            return json.loads(payload)
+        except HTTPError as exc:
+            if exc.code in _RETRYABLE_HTTP_CODES and attempt < _MAX_RETRIES:
+                delay = _BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                LOGGER.warning(
+                    "HTTP GET %d retryable (attempt %d/%d), retrying in %.1fs url=%s",
+                    exc.code, attempt, _MAX_RETRIES, delay, full_url,
+                )
+                time.sleep(delay)
+                continue
+            LOGGER.error("HTTP GET failed url=%s status=%d error=%s", full_url, exc.code, exc)
+            raise
+        except (URLError, TimeoutError, OSError) as exc:
+            if attempt < _MAX_RETRIES:
+                delay = _BASE_DELAY * (2 ** (attempt - 1)) + random.uniform(0, 0.5)
+                LOGGER.warning(
+                    "HTTP GET network error (attempt %d/%d), retrying in %.1fs url=%s error=%s",
+                    attempt, _MAX_RETRIES, delay, full_url, exc,
+                )
+                time.sleep(delay)
+                continue
+            LOGGER.error("HTTP GET failed url=%s error=%s", full_url, exc)
+            raise
 
 
 def _load_checkpoint(conn: sqlite3.Connection, source: str, checkpoint_key: str) -> dict[str, Any] | None:
@@ -382,6 +410,7 @@ def ingest_polymarket(
     use_incremental_checkpoint: bool = True,
     checkpoint_lookback_seconds: int = 300,
     reset_checkpoint: bool = False,
+    request_delay_ms: int = 250,
 ) -> dict[str, Any]:
     LOGGER.info(
         "ingest_polymarket: START active=%s(%d) closed=%s(%d) trades_per_market=%d "
@@ -482,16 +511,20 @@ def ingest_polymarket(
 
     condition_ids = list(market_by_condition.keys())
     total_chunks = (len(condition_ids) + market_chunk_size - 1) // market_chunk_size if condition_ids else 0
+    request_delay_s = request_delay_ms / 1000.0
     LOGGER.info(
-        "trade_fetch: starting — %d condition_ids, chunk_size=%d, total_chunks=%d, trades_per_market=%d",
-        len(condition_ids), market_chunk_size, total_chunks, trades_per_market,
+        "trade_fetch: starting — %d condition_ids, chunk_size=%d, total_chunks=%d, "
+        "trades_per_market=%d, request_delay_ms=%d",
+        len(condition_ids), market_chunk_size, total_chunks, trades_per_market, request_delay_ms,
     )
     trade_rows: list[tuple] = []
     skipped = 0
     trades_fetched = 0
     max_trade_timestamp_seen: int | None = None
     skipped_by_reason: dict[str, int] = {"unmapped": 0}
+    chunk_errors: list[dict[str, Any]] = []
     chunk_index = 0
+    request_count = 0
     for start in range(0, len(condition_ids), market_chunk_size):
         chunk = condition_ids[start : start + market_chunk_size]
         if not chunk:
@@ -505,43 +538,67 @@ def ingest_polymarket(
             "trade_fetch: chunk [%d/%d] ids=%d market_param_len=%d budget=%d",
             chunk_index, total_chunks, len(chunk), len(market_param), chunk_budget,
         )
-        while chunk_fetched < chunk_budget:
-            page_limit = min(trade_page_size, chunk_budget - chunk_fetched)
-            params: dict[str, Any] = {
-                "limit": page_limit,
-                "offset": offset,
-                "market": market_param,
-                "takerOnly": str(taker_only).lower(),
+        try:
+            while chunk_fetched < chunk_budget:
+                page_limit = min(trade_page_size, chunk_budget - chunk_fetched)
+                params: dict[str, Any] = {
+                    "limit": page_limit,
+                    "offset": offset,
+                    "market": market_param,
+                    "takerOnly": str(taker_only).lower(),
+                }
+                if effective_min_trade_timestamp is not None:
+                    params["timestamp_start"] = effective_min_trade_timestamp
+                if max_trade_timestamp is not None:
+                    params["timestamp_end"] = max_trade_timestamp
+                if request_count > 0 and request_delay_s > 0:
+                    time.sleep(request_delay_s)
+                page = _http_get_json(f"{DATA_BASE_URL}/trades", params=params)
+                request_count += 1
+                if not isinstance(page, list) or not page:
+                    LOGGER.info(
+                        "trade_fetch: chunk [%d/%d] — empty page at offset=%d, moving on",
+                        chunk_index, total_chunks, offset,
+                    )
+                    break
+                for tr in page:
+                    normalized = _normalize_trade_row(tr, market_by_condition)
+                    if normalized is None:
+                        skipped += 1
+                        skipped_by_reason["unmapped"] = skipped_by_reason.get("unmapped", 0) + 1
+                        continue
+                    payload, ts_int = normalized
+                    trade_rows.append(payload)
+                    if max_trade_timestamp_seen is None or ts_int > max_trade_timestamp_seen:
+                        max_trade_timestamp_seen = ts_int
+                fetched = len(page)
+                trades_fetched += fetched
+                chunk_fetched += fetched
+                LOGGER.debug(
+                    "trade_fetch: chunk [%d/%d] page fetched=%d chunk_total=%d/%d",
+                    chunk_index, total_chunks, fetched, chunk_fetched, chunk_budget,
+                )
+                if fetched < page_limit:
+                    break
+                offset += fetched
+        except Exception as exc:
+            error_info = {
+                "chunk_index": chunk_index,
+                "condition_ids": chunk,
+                "offset_at_failure": offset,
+                "chunk_fetched_before_error": chunk_fetched,
+                "error": str(exc),
             }
-            if effective_min_trade_timestamp is not None:
-                params["timestamp_start"] = effective_min_trade_timestamp
-            if max_trade_timestamp is not None:
-                params["timestamp_end"] = max_trade_timestamp
-            page = _http_get_json(f"{DATA_BASE_URL}/trades", params=params)
-            if not isinstance(page, list) or not page:
-                LOGGER.info("trade_fetch: chunk [%d/%d] — empty page at offset=%d, moving on", chunk_index, total_chunks, offset)
-                break
-            for tr in page:
-                normalized = _normalize_trade_row(tr, market_by_condition)
-                if normalized is None:
-                    skipped += 1
-                    skipped_by_reason["unmapped"] = skipped_by_reason.get("unmapped", 0) + 1
-                    continue
-                payload, ts_int = normalized
-                trade_rows.append(payload)
-                if max_trade_timestamp_seen is None or ts_int > max_trade_timestamp_seen:
-                    max_trade_timestamp_seen = ts_int
-            fetched = len(page)
-            trades_fetched += fetched
-            chunk_fetched += fetched
-            LOGGER.debug("trade_fetch: chunk [%d/%d] page fetched=%d chunk_total=%d/%d", chunk_index, total_chunks, fetched, chunk_fetched, chunk_budget)
-            if fetched < page_limit:
-                break
-            offset += fetched
+            chunk_errors.append(error_info)
+            LOGGER.error(
+                "trade_fetch: chunk [%d/%d] FAILED at offset=%d — %s (continuing to next chunk)",
+                chunk_index, total_chunks, offset, exc,
+            )
 
     LOGGER.info(
-        "trade_fetch: DONE — trades_fetched=%d trade_rows=%d skipped=%d",
-        trades_fetched, len(trade_rows), skipped,
+        "trade_fetch: DONE — trades_fetched=%d trade_rows=%d skipped=%d "
+        "chunk_errors=%d requests=%d",
+        trades_fetched, len(trade_rows), skipped, len(chunk_errors), request_count,
     )
 
     before = conn.total_changes
@@ -585,6 +642,9 @@ def ingest_polymarket(
         "trades_inserted": inserted,
         "trades_skipped": skipped,
         "trades_skipped_unmapped": skipped_by_reason.get("unmapped", 0),
+        "chunk_errors": chunk_errors,
+        "chunks_failed": len(chunk_errors),
+        "chunks_total": total_chunks,
         "checkpoint_used": bool(use_incremental_checkpoint and min_trade_timestamp is None),
         "checkpoint_last_timestamp_before": checkpoint_last_ts_before,
         "checkpoint_last_timestamp_after": checkpoint_after,

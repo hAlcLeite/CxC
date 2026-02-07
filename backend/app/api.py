@@ -180,6 +180,7 @@ def create_app() -> FastAPI:
                     use_incremental_checkpoint=req.use_incremental_checkpoint,
                     checkpoint_lookback_seconds=req.checkpoint_lookback_seconds,
                     reset_checkpoint=req.reset_checkpoint,
+                    request_delay_ms=req.request_delay_ms,
                 )
                 pipeline_result: dict[str, int] | None = None
                 if run_recompute:

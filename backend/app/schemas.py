@@ -26,6 +26,7 @@ class PolymarketIngestRequest(BaseModel):
     use_incremental_checkpoint: bool = True
     checkpoint_lookback_seconds: int = Field(default=300, ge=0, le=86400)
     reset_checkpoint: bool = False
+    request_delay_ms: int = Field(default=250, ge=0, le=5000)
 
 
 class RecomputeRequest(BaseModel):

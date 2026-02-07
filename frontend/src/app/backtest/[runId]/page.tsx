@@ -8,45 +8,55 @@ import { EdgeBuckets } from "@/components/backtest/EdgeBuckets";
 import { useBacktest } from "@/lib/hooks";
 
 export default function BacktestDetailPage({
-  params,
+	params,
 }: {
-  params: Promise<{ runId: string }>;
+	params: Promise<{ runId: string }>;
 }) {
-  const { runId } = use(params);
-  const { data, isLoading, error } = useBacktest(runId);
+	const { runId } = use(params);
+	const { data, isLoading, error } = useBacktest(runId);
 
-  if (isLoading) {
-    return <LoadingState message="Loading backtest results..." />;
-  }
+	if (isLoading) {
+		return <LoadingState message="Loading backtest results..." />;
+	}
 
-  if (error || !data) {
-    return (
-      <div className="space-y-4">
-        <Link href="/backtest" className="text-muted hover:underline">
-          &larr; Back to Backtest
-        </Link>
-        <Card className="border-danger">
-          <CardContent className="py-8 text-center">
-            <p className="text-danger">
-              {error?.message || "Backtest not found"}
-            </p>
-          </CardContent>
-        </Card>
-      </div>
-    );
-  }
+	if (error || !data) {
+		return (
+			<div className="space-y-4">
+				<Link href="/backtest" className="text-muted hover:underline">
+					&larr; Back to Backtest
+				</Link>
+				<Card className="border-danger">
+					<CardContent className="py-8 text-center">
+						<p className="text-danger">
+							{error?.message || "Backtest not found"}
+						</p>
+					</CardContent>
+				</Card>
+			</div>
+		);
+	}
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <Link href="/backtest" className="text-muted hover:underline">
-          &larr; Back to Backtest
-        </Link>
-      </div>
+	return (
+		<div className="space-y-6">
+			<div>
+				<Link href="/backtest" className="text-muted hover:underline">
+					&larr; Back to Backtest
+				</Link>
+			</div>
 
-      <BacktestSummary summary={data} />
+			<BacktestSummary summary={data} />
 
-      <EdgeBuckets buckets={data.edge_buckets ?? []} />
-    </div>
-  );
+			{data.edge_buckets ? (
+				<EdgeBuckets buckets={data.edge_buckets} />
+			) : (
+				<Card className="border-dashed">
+					<CardContent className="py-8 text-center">
+						<p className="text-muted">
+							{data.note ?? "No edge bucket data available"}
+						</p>
+					</CardContent>
+				</Card>
+			)}
+		</div>
+	);
 }

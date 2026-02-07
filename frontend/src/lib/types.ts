@@ -188,9 +188,32 @@ export interface RecomputeParams {
   include_resolved_snapshots?: boolean;
 }
 
+export interface ChunkError {
+  chunk_index: number;
+  condition_ids: string[];
+  offset_at_failure: number;
+  chunk_fetched_before_error: number;
+  error: string;
+}
+
+export interface IngestDetail {
+  markets_fetched_active: number;
+  markets_fetched_closed: number;
+  markets_upserted: number;
+  outcomes_upserted: number;
+  trades_fetched: number;
+  trades_inserted: number;
+  trades_skipped: number;
+  chunks_failed: number;
+  chunks_total: number;
+  chunk_errors: ChunkError[];
+  [key: string]: unknown;
+}
+
 export interface IngestResult {
   source: string;
-  ingest: Record<string, number>;
+  run_id: string;
+  ingest: IngestDetail;
   pipeline: Record<string, number> | null;
   db_path: string;
 }
