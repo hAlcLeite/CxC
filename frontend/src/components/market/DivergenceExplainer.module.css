@@ -1,0 +1,64 @@
+.explainButton {
+  isolation: isolate;
+}
+
+.geminiIcon {
+  position: relative;
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  transition: transform 220ms ease, filter 220ms ease;
+}
+
+.geminiLogo {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+  transition: filter 220ms ease;
+}
+
+.geminiGlow {
+  position: absolute;
+  inset: -6px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.34) 0%, rgba(255, 255, 255, 0) 72%);
+  opacity: 0;
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+
+.explainButton:hover .geminiIcon,
+.explainButton:focus-visible .geminiIcon {
+  animation: geminiSpin 2.8s cubic-bezier(0.24, 0.01, 0.28, 1) infinite;
+  filter: drop-shadow(0 0 0.32rem rgba(255, 255, 255, 0.7));
+}
+
+.explainButton:hover .geminiGlow,
+.explainButton:focus-visible .geminiGlow {
+  opacity: 1;
+  animation: geminiPulse 900ms ease-in-out infinite;
+}
+
+.explainButton:hover .geminiLogo,
+.explainButton:focus-visible .geminiLogo {
+  filter: brightness(0) invert(0);
+}
+
+@keyframes geminiSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes geminiPulse {
+  0%,
+  100% {
+    transform: scale(0.92);
+    opacity: 0.45;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.92;
+  }
+}

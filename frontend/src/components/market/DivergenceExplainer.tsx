@@ -1,8 +1,10 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { Card, CardContent, Button, Spinner } from "@/components/ui";
 import { explainDivergence } from "@/lib/api";
+import styles from "./DivergenceExplainer.module.css";
 
 interface DivergenceExplainerProps {
     marketId: string;
@@ -53,51 +55,66 @@ export function DivergenceExplainer({
     };
 
     return (
-        <Card className="border-primary/30 bg-primary/5">
-            <CardContent className="py-4">
-                <div className="flex items-center justify-between gap-4">
-                    <div className="flex items-center gap-2">
-                        <span className="text-lg">🤖</span>
-                        <span className="text-sm font-medium">AI Divergence Analysis</span>
-                        {wasCached && explanation && (
-                            <span className="text-xs text-muted">(cached)</span>
-                        )}
+        <Card
+            className="overflow-hidden border-border bg-background"
+            style={{ padding: 0 }}
+        >
+            <CardContent className="p-0">
+                <div className="grid h-8 grid-cols-[1fr_auto] items-stretch sm:grid-cols-[minmax(220px,max-content)_1fr_auto]">
+                    <div className="flex h-full items-center gap-2 bg-foreground px-3 text-xs font-medium uppercase tracking-[0.08em] text-background sm:text-sm">
+                        AI Divergence Analysis
                     </div>
 
-                    {!explanation && !isLoading && (
+                    <div className="hidden h-full items-center px-3 text-xs uppercase tracking-[0.07em] text-muted sm:flex">
+                        {isLoading
+                            ? "Analyzing market signal"
+                            : wasCached && explanation
+                              ? "Cached response"
+                              : "Model-assisted divergence read"}
+                    </div>
+
+                    <div className="h-full min-w-[168px] border-l border-border">
                         <Button
                             onClick={handleExplain}
-                            variant="primary"
-                            size="sm"
+                            variant="ghost"
                             disabled={isLoading}
+                            className={`group !flex !h-full !min-h-0 !w-full !items-center !justify-center !gap-2 !border-0 !bg-background !px-3 !py-0 text-xs uppercase tracking-[0.08em] text-foreground hover:!bg-foreground hover:!text-background sm:text-sm ${styles.explainButton}`}
                         >
-                            Explain Divergence
+                            <span className={styles.geminiIcon} aria-hidden="true">
+                                <Image
+                                    src="/logos/gemini.png"
+                                    alt=""
+                                    width={14}
+                                    height={14}
+                                    className={styles.geminiLogo}
+                                />
+                                <span className={styles.geminiGlow} />
+                            </span>
+                            {isLoading
+                                ? "Analyzing..."
+                                  : explanation
+                                    ? "Refresh Explanation"
+                                  : "Explain Divergence"}
                         </Button>
-                    )}
+                    </div>
                 </div>
 
                 {isLoading && (
-                    <div className="mt-4 flex items-center gap-2 text-muted">
+                    <div className="flex items-center gap-2 px-3 py-3 text-muted">
                         <Spinner size="sm" />
                         <span className="text-sm">Analyzing market with AI...</span>
                     </div>
                 )}
 
                 {error && (
-                    <div className="mt-4 rounded-md bg-danger/10 p-3 text-sm text-danger">
+                    <div className="m-3 rounded-md bg-danger/10 p-3 text-sm text-danger">
                         {error}
                     </div>
                 )}
 
                 {explanation && (
-                    <div className="mt-4">
+                    <div className="px-3 py-3">
                         <p className="text-sm leading-relaxed">{explanation}</p>
-                        <button
-                            onClick={handleExplain}
-                            className="mt-3 text-xs text-muted hover:text-primary transition-colors"
-                        >
-                            ↻ Refresh explanation
-                        </button>
                     </div>
                 )}
             </CardContent>

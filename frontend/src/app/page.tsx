@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Badge,
   Button,
@@ -17,6 +17,7 @@ import {
   TableRow,
 } from "@/components/ui";
 import { ThreeTechnologyBackground } from "@/components/background/ThreeTechnologyBackground";
+import styles from "./page.module.css";
 
 type InfluenceNode = {
   id: string;
@@ -64,11 +65,89 @@ function getNodeById(id: string) {
 }
 
 export default function LandingPage() {
+  const titleText = "PRECOGNITION";
   const [showCommunities, setShowCommunities] = useState(true);
   const [showGlow, setShowGlow] = useState(true);
   const [showLeadLag, setShowLeadLag] = useState(true);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const [tickMarks, setTickMarks] = useState<Array<{ id: number; left: number; height: number }>>([]);
+  const [ghostOffset, setGhostOffset] = useState({ x: 0, y: 0 });
+  const ghostOffsetRef = useRef({ x: 0, y: 0 });
   const activeNode = activeNodeId ? getNodeById(activeNodeId) : null;
+  const scrollToContent = () => {
+    const section = document.getElementById("content-start");
+    if (section) {
+      section.scrollIntoView({ behavior: "smooth", block: "start" });
+    }
+  };
+
+  useEffect(() => {
+    const spawnTickMarks = () => {
+      const nextCount = 3 + Math.floor(Math.random() * 3);
+      const indices = new Set<number>();
+      while (indices.size < nextCount) {
+        indices.add(Math.floor(Math.random() * titleText.length));
+      }
+      const marks = Array.from(indices).map((index, i) => ({
+        id: Date.now() + i,
+        left: ((index + 0.5) / titleText.length) * 100,
+        height: 6 + Math.floor(Math.random() * 5),
+      }));
+      setTickMarks(marks);
+      window.setTimeout(() => setTickMarks([]), 420);
+    };
+
+    const startTimeout = window.setTimeout(spawnTickMarks, 700);
+    const interval = window.setInterval(spawnTickMarks, 4000);
+    return () => {
+      window.clearTimeout(startTimeout);
+      window.clearInterval(interval);
+    };
+  }, [titleText.length]);
+
+  useEffect(() => {
+    let rafId = 0;
+    const maxOffset = 6;
+    const current = { x: 0, y: 0 };
+    const target = { x: 0, y: 0 };
+
+    const animate = () => {
+      current.x += (target.x - current.x) * 0.12;
+      current.y += (target.y - current.y) * 0.12;
+
+      if (
+        Math.abs(current.x - ghostOffsetRef.current.x) > 0.01 ||
+        Math.abs(current.y - ghostOffsetRef.current.y) > 0.01
+      ) {
+        ghostOffsetRef.current = { x: current.x, y: current.y };
+        setGhostOffset(ghostOffsetRef.current);
+      }
+
+      rafId = window.requestAnimationFrame(animate);
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      const nx = event.clientX / window.innerWidth - 0.5;
+      const ny = event.clientY / window.innerHeight - 0.5;
+      target.x = Math.max(-maxOffset, Math.min(maxOffset, nx * maxOffset * 2));
+      target.y = Math.max(-maxOffset, Math.min(maxOffset, ny * maxOffset * 2));
+    };
+
+    const onPointerLeave = () => {
+      target.x = 0;
+      target.y = 0;
+    };
+
+    window.addEventListener("pointermove", onPointerMove, { passive: true });
+    window.addEventListener("pointerleave", onPointerLeave, { passive: true });
+    rafId = window.requestAnimationFrame(animate);
+
+    return () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerleave", onPointerLeave);
+      window.cancelAnimationFrame(rafId);
+    };
+  }, []);
 
   return (
     <div className="relative isolate space-y-16 pb-12">
@@ -76,10 +155,29 @@ export default function LandingPage() {
 
       <section
         id="top"
-        className="relative z-10 flex min-h-[calc(100vh-10rem)] items-center justify-center"
+        className="relative z-10 flex min-h-screen items-center justify-center overflow-hidden"
       >
         <div className="relative z-10 flex flex-col items-center gap-6 text-center">
-          <h1 className="text-6xl font-bold tracking-tight">PRECOGNITION</h1>
+          <div className={styles.forecastTitleWrap}>
+            <span
+              className={`${styles.forecastGhost} text-6xl font-bold tracking-tight`}
+              style={{ transform: `translate(${ghostOffset.x.toFixed(2)}px, ${ghostOffset.y.toFixed(2)}px)` }}
+              aria-hidden="true"
+            >
+              {titleText}
+            </span>
+            <h1 className={`${styles.forecastTitle} text-6xl font-bold tracking-tight`} data-text={titleText}>
+              {titleText}
+            </h1>
+            {tickMarks.map((tick) => (
+              <span
+                key={tick.id}
+                className={styles.forecastTick}
+                style={{ left: `${tick.left}%`, height: `${tick.height}px` }}
+                aria-hidden="true"
+              />
+            ))}
+          </div>
           <p className="max-w-2xl text-base text-muted">
             A wallet-weighted signal engine that spots informed flow before markets reprice.
           </p>
@@ -87,8 +185,17 @@ export default function LandingPage() {
             <Button size="lg">Launch</Button>
           </Link>
         </div>
+        <button
+          type="button"
+          onClick={scrollToContent}
+          className={styles.scrollCue}
+          aria-label="Scroll to content"
+        >
+          <span className={styles.scrollArrow} aria-hidden="true">↓</span>
+        </button>
       </section>
 
+      <div id="content-start" />
 
       <section id="how-it-works" className="space-y-4 scroll-mt-24">
         <div>

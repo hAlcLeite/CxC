@@ -1,0 +1,135 @@
+.forecastTitleWrap {
+  position: relative;
+  display: inline-block;
+  padding-top: 10px;
+  isolation: isolate;
+}
+
+.scrollCue {
+  position: absolute;
+  bottom: max(48px, calc(env(safe-area-inset-bottom) + 20px));
+  left: 50%;
+  transform: translateX(-50%);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(237, 237, 237, 0.35);
+  color: var(--foreground);
+  background: rgba(10, 10, 10, 0.28);
+  cursor: pointer;
+}
+
+.scrollCue:hover {
+  border-color: rgba(237, 237, 237, 0.7);
+}
+
+.scrollArrow {
+  font-size: 15px;
+  line-height: 1;
+  opacity: 0.85;
+  animation: scroll-cue-pulse 1.6s ease-in-out infinite;
+}
+
+.forecastGhost {
+  position: absolute;
+  inset: 0;
+  display: block;
+  z-index: 0;
+  color: transparent;
+  opacity: 0.1;
+  pointer-events: none;
+  line-height: 1;
+  white-space: nowrap;
+  -webkit-text-stroke: 1px var(--foreground);
+  text-shadow:
+    0 0 0.35px rgba(237, 237, 237, 0.35),
+    0 0 1px rgba(237, 237, 237, 0.2);
+}
+
+.forecastTitle {
+  position: relative;
+  z-index: 1;
+  display: inline-block;
+  color: var(--foreground);
+  text-transform: uppercase;
+  font-weight: 800;
+  animation: forecast-contrast 2s ease-in-out infinite;
+}
+
+.forecastTitle::after {
+  content: attr(data-text);
+  position: absolute;
+  inset: 0;
+  color: transparent;
+  background-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(237, 237, 237, 0) 38%,
+    rgba(237, 237, 237, 0.92) 50%,
+    rgba(237, 237, 237, 0) 62%,
+    transparent 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 16% 100%;
+  background-position: -24% 0;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  mix-blend-mode: normal;
+  opacity: 0.95;
+  text-shadow: 0 0 8px rgba(237, 237, 237, 0.35);
+  pointer-events: none;
+  animation: forecast-sweep 2s linear infinite;
+  will-change: background-position;
+}
+
+@supports not (mix-blend-mode: screen) {
+  .forecastTitle::after {
+    mix-blend-mode: normal;
+  }
+}
+
+
+@keyframes forecast-sweep {
+  0% {
+    background-position: -24% 0;
+  }
+  15% {
+    background-position: 124% 0;
+  }
+  100% {
+    background-position: 124% 0;
+  }
+}
+
+@keyframes forecast-contrast {
+  0%,
+  8%,
+  100% {
+    filter: contrast(1);
+    text-shadow: 0 0 0 rgba(237, 237, 237, 0);
+  }
+  10%,
+  13% {
+    filter: contrast(1.1);
+    text-shadow: 0 0 6px rgba(237, 237, 237, 0.2);
+  }
+  18% {
+    filter: contrast(1);
+    text-shadow: 0 0 0 rgba(237, 237, 237, 0);
+  }
+}
+
+@keyframes scroll-cue-pulse {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  50% {
+    transform: translateY(4px);
+    opacity: 1;
+  }
+}

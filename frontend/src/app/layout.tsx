@@ -13,6 +13,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Precognition",
   description: "Wallet-weighted prediction market signals",
+  icons: {
+    icon: "/logos/precognition-logo.png",
+  },
 };
 
 export default function RootLayout({
