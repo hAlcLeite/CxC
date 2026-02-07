@@ -63,6 +63,18 @@ export async function fetchMarket(
   return response.result;
 }
 
+// Explain divergence with AI
+export async function explainDivergence(
+  marketId: string
+): Promise<{ market_id: string; explanation: string; cached: boolean }> {
+  const response = await fetchApi<
+    ApiResponse<{ market_id: string; explanation: string; cached: boolean }>
+  >(`/markets/${encodeURIComponent(marketId)}/explain`, {
+    method: "POST",
+  });
+  return response.result;
+}
+
 // Wallet detail
 export async function fetchWallet(wallet: string): Promise<WalletDetailResponse> {
   const response = await fetchApi<ApiResponse<WalletDetailResponse>>(

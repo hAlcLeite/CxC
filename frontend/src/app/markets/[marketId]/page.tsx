@@ -6,6 +6,7 @@ import { LoadingState, Card, CardContent, Badge } from "@/components/ui";
 import { SnapshotPanel } from "@/components/market/SnapshotPanel";
 import { ProbabilityChart } from "@/components/market/ProbabilityChart";
 import { TopDriversTable } from "@/components/market/TopDriversTable";
+import { DivergenceExplainer } from "@/components/market/DivergenceExplainer";
 import { useMarket } from "@/lib/hooks";
 import { format } from "date-fns";
 
@@ -73,6 +74,11 @@ export default function MarketDetailPage({
       </div>
 
       <SnapshotPanel snapshot={latest_snapshot} />
+
+      <DivergenceExplainer
+        marketId={marketId}
+        divergence={latest_snapshot.divergence}
+      />
 
       {time_series.length > 1 && <ProbabilityChart timeSeries={time_series} />}
 

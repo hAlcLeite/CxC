@@ -2,6 +2,13 @@ from __future__ import annotations
 
 import logging
 import os
+from pathlib import Path
+
+# Load .env from root folder (parent of backend/)
+from dotenv import load_dotenv
+root_env = Path(__file__).resolve().parents[2] / ".env"
+if root_env.exists():
+    load_dotenv(root_env)
 
 import uvicorn
 

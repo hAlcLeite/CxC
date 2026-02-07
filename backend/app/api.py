@@ -35,6 +35,7 @@ from app.services.observability import (
 from app.services.pipeline import recompute_pipeline
 from app.services.polymarket import ingest_polymarket
 from app.services.smartcrowd import build_market_snapshot, latest_screener_rows
+from app.services.backboard import explain_divergence as generate_ai_explanation
 
 
 def create_app() -> FastAPI:
@@ -395,6 +396,68 @@ def create_app() -> FastAPI:
                 "time_series": [dict(row) for row in reversed(time_series)],
                 "flow_summary": {"net_yes_flow_size": net_yes_flow, "trade_count": len(trade_rows)},
                 "explanation": explanation,
+            }
+        )
+
+    @app.post("/markets/{market_id}/explain", response_model=GenericResponse)
+    def explain_market(
+        market_id: str,
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> GenericResponse:
+        """Generate AI explanation for market divergence using Backboard.io + Gemini."""
+        # Get market info
+        market = conn.execute(
+            "SELECT id, question, category, end_time, liquidity FROM markets WHERE id = ?",
+            (market_id,),
+        ).fetchone()
+        if not market:
+            raise HTTPException(status_code=404, detail=f"Market not found: {market_id}")
+
+        # Get latest snapshot
+        latest = conn.execute(
+            """
+            SELECT *
+            FROM smartcrowd_snapshots
+            WHERE market_id = ?
+            ORDER BY snapshot_time DESC
+            LIMIT 1
+            """,
+            (market_id,),
+        ).fetchone()
+        if not latest:
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No snapshot found for market: {market_id}"
+            )
+
+        # Build context for AI
+        context = {
+            "market_id": market_id,
+            "question": market["question"],
+            "category": market["category"],
+            "market_prob": float(latest["market_prob"]),
+            "smartcrowd_prob": float(latest["smartcrowd_prob"]),
+            "divergence": float(latest["divergence"]),
+            "confidence": float(latest["confidence"]),
+            "integrity_risk": float(latest["integrity_risk"]),
+            "active_wallets": latest["active_wallets"],
+            "top_drivers": json.loads(latest["top_drivers"]) if latest["top_drivers"] else [],
+            "cohort_summary": json.loads(latest["cohort_summary"]) if latest["cohort_summary"] else [],
+        }
+
+        # Generate AI explanation (rate limited & cached)
+        result = generate_ai_explanation(context)
+
+        if result.get("error"):
+            if result.get("rate_limited"):
+                raise HTTPException(status_code=429, detail=result["error"])
+            raise HTTPException(status_code=500, detail=result["error"])
+
+        return GenericResponse(
+            result={
+                "market_id": market_id,
+                "explanation": result.get("explanation"),
+                "cached": result.get("cached", False),
             }
         )
 
