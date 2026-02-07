@@ -1,12 +1,12 @@
 import type { Metadata } from "next";
-import { Geist_Mono } from "next/font/google";
+import { Inter } from "next/font/google";
 import "./globals.css";
 import { QueryProvider } from "@/providers/QueryProvider";
 import { Header } from "@/components/layout/Header";
 import { Toaster } from "sonner";
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const inter = Inter({
+  variable: "--font-inter",
   subsets: ["latin"],
 });
 
@@ -22,7 +22,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${geistMono.variable} font-mono antialiased`}>
+      <body className={`${inter.variable} font-sans antialiased`}>
         <QueryProvider>
           <Header />
           <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>

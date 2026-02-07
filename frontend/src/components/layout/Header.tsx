@@ -9,10 +9,18 @@ import { RunPipelineModal } from "@/components/pipeline/RunPipelineModal";
 import { useAlerts } from "@/lib/hooks";
 
 const navItems = [
-  { href: "/", label: "Dashboard" },
+  { href: "/dashboard", label: "Dashboard" },
   { href: "/screener", label: "Screener" },
   { href: "/backtest", label: "Backtest" },
   { href: "/alerts", label: "Alerts" },
+];
+
+const landingNavItems = [
+  { href: "#features", label: "Features" },
+  { href: "#visualization", label: "Visualization" },
+  { href: "#how-it-works", label: "How it Works" },
+  { href: "#tracks", label: "Tracks" },
+  { href: "#demo", label: "Demo" },
 ];
 
 export function Header() {
@@ -21,6 +29,8 @@ export function Header() {
   const { data: alertsData } = useAlerts();
 
   const alertCount = alertsData?.count ?? 0;
+  const isLanding = pathname === "/";
+  const signInHref = "#demo";
 
   return (
     <>
@@ -32,20 +42,20 @@ export function Header() {
             </Link>
 
             <nav className="flex items-center gap-1">
-              {navItems.map((item) => (
+              {(isLanding ? landingNavItems : navItems).map((item) => (
                 <Link
                   key={item.href}
                   href={item.href}
                   className={clsx(
                     "px-3 py-2 font-mono text-sm transition-colors",
                     "border-2 border-transparent",
-                    pathname === item.href
+                    !isLanding && pathname === item.href
                       ? "border-foreground bg-foreground text-background"
                       : "hover:border-foreground"
                   )}
                 >
                   {item.label}
-                  {item.label === "Alerts" && alertCount > 0 && (
+                  {!isLanding && item.label === "Alerts" && alertCount > 0 && (
                     <span className="ml-2 inline-flex h-5 w-5 items-center justify-center border-2 border-danger text-xs text-danger">
                       {alertCount > 99 ? "99+" : alertCount}
                     </span>
@@ -55,16 +65,24 @@ export function Header() {
             </nav>
           </div>
 
-          <Button size="sm" onClick={() => setShowPipelineModal(true)}>
-            Refresh Data
-          </Button>
+          {isLanding ? (
+            <Link href={signInHref}>
+              <Button size="sm" variant="secondary">Sign In</Button>
+            </Link>
+          ) : (
+            <Button size="sm" onClick={() => setShowPipelineModal(true)}>
+              Refresh Data
+            </Button>
+          )}
         </div>
       </header>
 
-      <RunPipelineModal
-        open={showPipelineModal}
-        onClose={() => setShowPipelineModal(false)}
-      />
+      {!isLanding && (
+        <RunPipelineModal
+          open={showPipelineModal}
+          onClose={() => setShowPipelineModal(false)}
+        />
+      )}
     </>
   );
 }
