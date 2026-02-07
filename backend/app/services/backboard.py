@@ -16,7 +16,7 @@ from typing import Any
 
 import requests
 
-  logger = logging.getLogger("smartcrowd.backboard")
+logger = logging.getLogger("smartcrowd.backboard")
 
 # Backboard.io API configuration
 BACKBOARD_API_KEY = os.getenv("BACKBOARD_API_KEY", "")

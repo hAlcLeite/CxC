@@ -210,7 +210,7 @@ def main() -> None:
             t = ingest_trades(conn, paths["trades"])
             o = ingest_outcomes(conn, paths["outcomes"])
             r = recompute_pipeline(conn, include_resolved_snapshots=True)
-            b = run_backtest(conn, cutoff_hours=12.0)
+            b = run_backtest(conn, cutoff_hours=1.0)
         print(f"Ingested: markets={m}, trades_inserted={t['inserted']}, trades_skipped={t['skipped']}, outcomes={o}")
         print(f"Pipeline: {r}")
         print(

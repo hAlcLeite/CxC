@@ -27,7 +27,7 @@ class SyncCycleConfig:
     include_resolved_snapshots: bool = True
     run_recompute: bool = True
     run_backtest: bool = False
-    backtest_cutoff_hours: float = 12.0
+    backtest_cutoff_hours: float = 1.0
 
 
 def run_sync_cycle(conn, config: SyncCycleConfig) -> dict[str, Any]:

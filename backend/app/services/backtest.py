@@ -90,7 +90,7 @@ def _edge_bucket_stats(records: list[dict]) -> list[dict]:
     return output
 
 
-def run_backtest(conn: sqlite3.Connection, cutoff_hours: float = 12.0, run_id: str | None = None) -> dict:
+def run_backtest(conn: sqlite3.Connection, cutoff_hours: float = 1.0, run_id: str | None = None) -> dict:
     if run_id is None:
         run_id = uuid.uuid4().hex
     conn.execute("DELETE FROM market_backtests WHERE run_id = ?", (run_id,))
@@ -125,6 +125,13 @@ def run_backtest(conn: sqlite3.Connection, cutoff_hours: float = 12.0, run_id: s
             (market_id, cutoff_dt.isoformat()),
         ).fetchone()
         if not first_trade:
+            continue
+
+        # Skip markets whose trading window is shorter than the cutoff —
+        # there isn't enough pre-cutoff data for a meaningful evaluation.
+        first_trade_dt = _parse_iso(first_trade["ts"])
+        trading_window = min(end_time, resolution_time) - first_trade_dt
+        if trading_window < timedelta(hours=cutoff_hours):
             continue
 
         snap = build_market_snapshot(conn, market_id, snapshot_time=cutoff_dt, persist=False)

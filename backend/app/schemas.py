@@ -35,7 +35,7 @@ class RecomputeRequest(BaseModel):
 
 
 class BacktestRequest(BaseModel):
-    cutoff_hours: float = Field(default=12.0, gt=0.0, le=168.0)
+    cutoff_hours: float = Field(default=1.0, gt=0.0, le=168.0)
     run_id: str | None = None
 
 

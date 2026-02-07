@@ -58,7 +58,7 @@ def main() -> None:
                 print("Pipeline:", pipeline_result)
 
             if args.run_backtest:
-                backtest = run_backtest(conn, cutoff_hours=12.0)
+                backtest = run_backtest(conn, cutoff_hours=1.0)
                 print(
                     "Backtest:",
                     {
