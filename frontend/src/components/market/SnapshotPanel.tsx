@@ -8,8 +8,8 @@ interface SnapshotPanelProps {
 
 export function SnapshotPanel({ snapshot }: SnapshotPanelProps) {
 	return (
-		<Card header>
-			<div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-3">
+		<Card>
+			<div>
 				<CardTitle>Latest Snapshot</CardTitle>
 			</div>
 			<CardContent className="p-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

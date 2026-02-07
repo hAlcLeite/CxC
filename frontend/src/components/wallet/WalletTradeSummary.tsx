@@ -20,7 +20,7 @@ export function WalletTradeSummary({ summary }: WalletTradeSummaryProps) {
 	return (
 		<>
 			<Card header>
-				<div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-3">
+				<div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-4">
 					<CardTitle>Trade Activity</CardTitle>
 				</div>
 				<CardContent className="p-4">
@@ -57,8 +57,8 @@ export function WalletTradeSummary({ summary }: WalletTradeSummaryProps) {
 			</Card>
 
 			{summary.recent_trades.length > 0 && (
-				<Card className="p-0">
-					<div className="bg-foreground text-background border-b-2 border-background px-4 py-3">
+				<Card header>
+					<div className="bg-foreground text-background border-b-2 border-background px-4 py-2">
 						<CardTitle>Recent Trades</CardTitle>
 					</div>
 					<CardContent className="p-4">
