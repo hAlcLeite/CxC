@@ -99,10 +99,32 @@ export interface WalletWeight {
   shrunk_weight: number;
 }
 
+export interface WalletRecentTrade {
+  market_id: string;
+  ts: string;
+  side: string;
+  action: string;
+  price: number;
+  size: number;
+  question: string | null;
+}
+
+export interface WalletTradeSummary {
+  trade_count: number;
+  market_count: number;
+  first_trade: string;
+  last_trade: string;
+  total_volume: number;
+  avg_price: number;
+  avg_size: number;
+  recent_trades: WalletRecentTrade[];
+}
+
 export interface WalletDetailResponse {
   wallet: string;
   metrics: WalletMetric[];
   weights: WalletWeight[];
+  trade_summary?: WalletTradeSummary;
 }
 
 // Alert types

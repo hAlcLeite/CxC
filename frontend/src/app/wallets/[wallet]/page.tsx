@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LoadingState, Card, CardContent } from "@/components/ui";
 import { WalletMetrics } from "@/components/wallet/WalletMetrics";
 import { WalletWeights } from "@/components/wallet/WalletWeights";
+import { WalletTradeSummary } from "@/components/wallet/WalletTradeSummary";
 import { useWallet } from "@/lib/hooks";
 
 export default function WalletDetailPage({
@@ -51,9 +52,14 @@ export default function WalletDetailPage({
         </p>
       </div>
 
-      <WalletMetrics metrics={data.metrics} />
-
-      <WalletWeights weights={data.weights} />
+      {data.metrics.length > 0 || data.weights.length > 0 ? (
+        <>
+          <WalletMetrics metrics={data.metrics} />
+          <WalletWeights weights={data.weights} />
+        </>
+      ) : data.trade_summary ? (
+        <WalletTradeSummary summary={data.trade_summary} />
+      ) : null}
     </div>
   );
 }

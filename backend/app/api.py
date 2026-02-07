@@ -419,14 +419,47 @@ def create_app() -> FastAPI:
             """,
             (normalized_wallet,),
         ).fetchall()
+
+        trade_summary = None
         if not metrics and not weights:
-            raise HTTPException(status_code=404, detail=f"Wallet not found: {normalized_wallet}")
+            summary_row = conn.execute(
+                """
+                SELECT
+                  COUNT(*) AS trade_count,
+                  COUNT(DISTINCT market_id) AS market_count,
+                  MIN(ts) AS first_trade,
+                  MAX(ts) AS last_trade,
+                  SUM(price * size) AS total_volume,
+                  AVG(price) AS avg_price,
+                  AVG(size) AS avg_size
+                FROM trades
+                WHERE wallet = ?
+                """,
+                (normalized_wallet,),
+            ).fetchone()
+            if not summary_row or summary_row["trade_count"] == 0:
+                raise HTTPException(status_code=404, detail=f"Wallet not found: {normalized_wallet}")
+            trade_summary = dict(summary_row)
+
+            recent_trades = conn.execute(
+                """
+                SELECT market_id, ts, side, action, price, size, m.question
+                FROM trades t
+                LEFT JOIN markets m ON m.id = t.market_id
+                WHERE t.wallet = ?
+                ORDER BY t.ts DESC
+                LIMIT 20
+                """,
+                (normalized_wallet,),
+            ).fetchall()
+            trade_summary["recent_trades"] = [dict(r) for r in recent_trades]
 
         return GenericResponse(
             result={
                 "wallet": normalized_wallet,
                 "metrics": [dict(r) for r in metrics],
                 "weights": [dict(r) for r in weights],
+                "trade_summary": trade_summary,
             }
         )
 
