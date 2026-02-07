@@ -474,12 +474,19 @@ def build_snapshots_for_all_markets(
     include_resolved: bool = False,
 ) -> dict[str, int]:
     if include_resolved:
-        rows = conn.execute("SELECT id FROM markets").fetchall()
+        rows = conn.execute(
+            """
+            SELECT DISTINCT m.id
+            FROM markets m
+            JOIN trades t ON t.market_id = m.id
+            """
+        ).fetchall()
     else:
         rows = conn.execute(
             """
-            SELECT m.id
+            SELECT DISTINCT m.id
             FROM markets m
+            JOIN trades t ON t.market_id = m.id
             LEFT JOIN outcomes o ON o.market_id = m.id
             WHERE o.market_id IS NULL
             """

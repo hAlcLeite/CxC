@@ -87,6 +87,7 @@ export async function fetchWallet(wallet: string): Promise<WalletDetailResponse>
 export async function fetchAlerts(params?: {
   divergenceThreshold?: number;
   integrityRiskThreshold?: number;
+  minConfidence?: number;
 }): Promise<AlertsResponse> {
   const searchParams = new URLSearchParams();
   if (params?.divergenceThreshold)
@@ -96,6 +97,9 @@ export async function fetchAlerts(params?: {
       "integrity_risk_threshold",
       String(params.integrityRiskThreshold)
     );
+  if (params?.minConfidence != null) {
+    searchParams.set("min_confidence", String(params.minConfidence));
+  }
 
   const query = searchParams.toString();
   const response = await fetchApi<ApiResponse<AlertsResponse>>(

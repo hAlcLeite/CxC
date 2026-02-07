@@ -100,8 +100,9 @@ def _build_config(args: argparse.Namespace, reset_checkpoint: bool) -> SyncCycle
         max_trade_timestamp=args.max_trade_timestamp,
         use_incremental_checkpoint=not args.no_incremental_checkpoint,
         checkpoint_lookback_seconds=args.checkpoint_lookback_seconds,
+        prefer_recent_closed_markets=not args.disable_prefer_recent_closed_markets,
         reset_checkpoint=reset_checkpoint,
-        include_resolved_snapshots=not args.exclude_resolved_snapshots,
+        include_resolved_snapshots=args.include_resolved_snapshots,
         run_recompute=not args.skip_recompute,
         run_backtest=False,
         backtest_cutoff_hours=args.backtest_cutoff_hours,
@@ -125,7 +126,11 @@ def run() -> None:
     parser.add_argument("--once", action="store_true", help="Run one cycle and exit")
     parser.add_argument("--run-backtest-every-cycles", type=int, default=0, help="0 disables periodic backtests")
     parser.add_argument("--backtest-cutoff-hours", type=float, default=12.0)
-    parser.add_argument("--exclude-resolved-snapshots", action="store_true")
+    parser.add_argument(
+        "--include-resolved-snapshots",
+        action="store_true",
+        help="Also build snapshots for resolved markets (off by default for fresher live surfaces).",
+    )
     parser.add_argument("--skip-recompute", action="store_true")
 
     parser.add_argument("--active-markets-limit", type=int, default=120)
@@ -138,6 +143,11 @@ def run() -> None:
     parser.add_argument("--max-trade-timestamp", type=int, default=None)
     parser.add_argument("--no-incremental-checkpoint", action="store_true")
     parser.add_argument("--checkpoint-lookback-seconds", type=int, default=300)
+    parser.add_argument(
+        "--disable-prefer-recent-closed-markets",
+        action="store_true",
+        help="Use legacy closed market pagination from the oldest pages.",
+    )
     parser.add_argument("--reset-checkpoint", action="store_true")
 
     parser.add_argument(

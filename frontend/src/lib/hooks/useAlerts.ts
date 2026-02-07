@@ -6,6 +6,7 @@ import { fetchAlerts } from "../api";
 export function useAlerts(params?: {
   divergenceThreshold?: number;
   integrityRiskThreshold?: number;
+  minConfidence?: number;
 }) {
   return useQuery({
     queryKey: ["alerts", params],

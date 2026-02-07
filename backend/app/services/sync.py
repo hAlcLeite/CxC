@@ -23,8 +23,9 @@ class SyncCycleConfig:
     max_trade_timestamp: int | None = None
     use_incremental_checkpoint: bool = True
     checkpoint_lookback_seconds: int = 300
+    prefer_recent_closed_markets: bool = True
     reset_checkpoint: bool = False
-    include_resolved_snapshots: bool = True
+    include_resolved_snapshots: bool = False
     run_recompute: bool = True
     run_backtest: bool = False
     backtest_cutoff_hours: float = 1.0
@@ -46,6 +47,7 @@ def run_sync_cycle(conn, config: SyncCycleConfig) -> dict[str, Any]:
         max_trade_timestamp=config.max_trade_timestamp,
         use_incremental_checkpoint=config.use_incremental_checkpoint,
         checkpoint_lookback_seconds=config.checkpoint_lookback_seconds,
+        prefer_recent_closed_markets=config.prefer_recent_closed_markets,
         reset_checkpoint=config.reset_checkpoint,
     )
 

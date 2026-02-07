@@ -6,7 +6,7 @@ import sqlite3
 import time
 from collections import defaultdict
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
@@ -22,7 +22,7 @@ from app.schemas import (
     PolymarketIngestRequest,
     RecomputeRequest,
 )
-from app.services.backtest import run_backtest
+from app.services.backtest import normalize_backtest_summary, run_backtest
 from app.services.beliefs import yes_direction
 from app.services.ingest import ingest_markets, ingest_outcomes, ingest_trades
 from app.services.observability import (
@@ -160,6 +160,7 @@ def create_app() -> FastAPI:
                     "trade_page_size": req.trade_page_size,
                     "market_chunk_size": req.market_chunk_size,
                     "use_incremental_checkpoint": req.use_incremental_checkpoint,
+                    "prefer_recent_closed_markets": req.prefer_recent_closed_markets,
                 },
             )
         started = time.perf_counter()
@@ -179,12 +180,13 @@ def create_app() -> FastAPI:
                     max_trade_timestamp=req.max_trade_timestamp,
                     use_incremental_checkpoint=req.use_incremental_checkpoint,
                     checkpoint_lookback_seconds=req.checkpoint_lookback_seconds,
+                    prefer_recent_closed_markets=req.prefer_recent_closed_markets,
                     reset_checkpoint=req.reset_checkpoint,
                     request_delay_ms=req.request_delay_ms,
                 )
                 pipeline_result: dict[str, int] | None = None
                 if run_recompute:
-                    pipeline_result = recompute_pipeline(conn, include_resolved_snapshots=True)
+                    pipeline_result = recompute_pipeline(conn, include_resolved_snapshots=False)
             duration_ms = (time.perf_counter() - started) * 1000.0
             with conn:
                 finish_pipeline_run(
@@ -582,12 +584,16 @@ def create_app() -> FastAPI:
         ).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail=f"Backtest run not found: {run_id}")
-        return GenericResponse(result=json.loads(row["summary_json"]))
+        return GenericResponse(result=normalize_backtest_summary(json.loads(row["summary_json"])))
 
     @app.get("/alerts", response_model=GenericResponse)
     def alerts(
         divergence_threshold: float = Query(default=0.08, ge=0.01, le=0.5),
         integrity_risk_threshold: float = Query(default=0.65, ge=0.0, le=1.0),
+        min_confidence: float = Query(default=0.30, ge=0.0, le=1.0),
+        max_snapshot_age_hours: int = Query(default=48, ge=1, le=720),
+        include_resolved: bool = Query(default=False),
+        min_active_wallets: int = Query(default=3, ge=0, le=1000),
         conn: sqlite3.Connection = Depends(get_conn),
     ) -> GenericResponse:
         rows = conn.execute(
@@ -599,6 +605,7 @@ def create_app() -> FastAPI:
                 divergence,
                 confidence,
                 integrity_risk,
+                active_wallets,
                 ROW_NUMBER() OVER (PARTITION BY market_id ORDER BY snapshot_time DESC) AS rn
               FROM precognition_snapshots
             )
@@ -608,26 +615,49 @@ def create_app() -> FastAPI:
               r.divergence,
               r.confidence,
               r.integrity_risk,
+              r.active_wallets,
               m.question,
               m.category,
               p.divergence AS prev_divergence
             FROM ranked r
             JOIN markets m ON m.id = r.market_id
+            LEFT JOIN outcomes o ON o.market_id = r.market_id
             LEFT JOIN ranked p
               ON p.market_id = r.market_id
              AND p.rn = 2
             WHERE r.rn = 1
+              AND (? OR o.market_id IS NULL)
             """
+            ,
+            (1 if include_resolved else 0,),
         ).fetchall()
 
         alerts_payload: list[dict] = []
+        now_utc = datetime.now(timezone.utc)
         for row in rows:
+            raw_snapshot_time = row["snapshot_time"]
+            if raw_snapshot_time:
+                snapshot_raw = str(raw_snapshot_time)
+                if snapshot_raw.endswith("Z"):
+                    snapshot_raw = snapshot_raw[:-1] + "+00:00"
+                snapshot_dt = datetime.fromisoformat(snapshot_raw)
+                if snapshot_dt.tzinfo is None:
+                    snapshot_dt = snapshot_dt.replace(tzinfo=timezone.utc)
+                age_hours = (now_utc - snapshot_dt.astimezone(timezone.utc)).total_seconds() / 3600.0
+                if age_hours > max_snapshot_age_hours:
+                    continue
+
             divergence = float(row["divergence"])
             confidence = float(row["confidence"])
             integrity_risk = float(row["integrity_risk"])
             prev_divergence = row["prev_divergence"]
+            active_wallets = int(row["active_wallets"] or 0)
 
-            if abs(divergence) >= divergence_threshold and confidence >= 0.5:
+            if (
+                abs(divergence) >= divergence_threshold
+                and confidence >= min_confidence
+                and active_wallets >= min_active_wallets
+            ):
                 alerts_payload.append(
                     {
                         "type": "trusted_cohort_regime_shift",
@@ -639,7 +669,7 @@ def create_app() -> FastAPI:
                     }
                 )
 
-            if integrity_risk >= integrity_risk_threshold:
+            if integrity_risk >= integrity_risk_threshold and active_wallets >= min_active_wallets:
                 alerts_payload.append(
                     {
                         "type": "integrity_risk_spike",
@@ -653,7 +683,7 @@ def create_app() -> FastAPI:
 
             if prev_divergence is not None:
                 prev_val = float(prev_divergence)
-                if divergence * prev_val < 0:
+                if divergence * prev_val < 0 and active_wallets >= min_active_wallets:
                     alerts_payload.append(
                         {
                             "type": "precognition_crossed_market",
@@ -668,9 +698,20 @@ def create_app() -> FastAPI:
                     )
 
         grouped = defaultdict(list)
+        alerts_payload.sort(key=lambda x: x["snapshot_time"], reverse=True)
         for alert in alerts_payload:
             grouped[alert["type"]].append(alert)
-        return GenericResponse(result={"count": len(alerts_payload), "alerts": alerts_payload, "by_type": grouped})
+        return GenericResponse(
+            result={
+                "count": len(alerts_payload),
+                "alerts": alerts_payload,
+                "by_type": grouped,
+                "max_snapshot_age_hours": max_snapshot_age_hours,
+                "include_resolved": include_resolved,
+                "min_active_wallets": min_active_wallets,
+                "min_confidence": min_confidence,
+            }
+        )
 
     @app.get("/ops/runs", response_model=GenericResponse)
     def ops_runs(

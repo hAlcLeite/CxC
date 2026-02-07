@@ -27,8 +27,18 @@ def main() -> None:
     parser.add_argument("--max-trade-timestamp", type=int, default=None)
     parser.add_argument("--no-incremental-checkpoint", action="store_true")
     parser.add_argument("--checkpoint-lookback-seconds", type=int, default=300)
+    parser.add_argument(
+        "--disable-prefer-recent-closed-markets",
+        action="store_true",
+        help="Use legacy closed market pagination from the oldest pages.",
+    )
     parser.add_argument("--reset-checkpoint", action="store_true")
     parser.add_argument("--skip-recompute", action="store_true")
+    parser.add_argument(
+        "--include-resolved-snapshots",
+        action="store_true",
+        help="Also build snapshots for resolved markets (off by default for fresher live views).",
+    )
     parser.add_argument("--run-backtest", action="store_true")
     args = parser.parse_args()
 
@@ -49,12 +59,16 @@ def main() -> None:
                 max_trade_timestamp=args.max_trade_timestamp,
                 use_incremental_checkpoint=not args.no_incremental_checkpoint,
                 checkpoint_lookback_seconds=args.checkpoint_lookback_seconds,
+                prefer_recent_closed_markets=not args.disable_prefer_recent_closed_markets,
                 reset_checkpoint=args.reset_checkpoint,
             )
             print("Ingest:", ingest_result)
 
             if not args.skip_recompute:
-                pipeline_result = recompute_pipeline(conn, include_resolved_snapshots=True)
+                pipeline_result = recompute_pipeline(
+                    conn,
+                    include_resolved_snapshots=args.include_resolved_snapshots,
+                )
                 print("Pipeline:", pipeline_result)
 
             if args.run_backtest:
