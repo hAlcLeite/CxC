@@ -46,3 +46,10 @@ backend/__pycache__/
 backend/**/*.pyc
 backend/data/
 backend/*.egg-info/
+
+
+# root env
+.env
+
+backboard/
+context/
