@@ -10,7 +10,10 @@ export default function BacktestPage() {
   const [cutoffHours, setCutoffHours] = useState(12);
   const runBacktest = useRunBacktest();
 
+  const isValidCutoff = cutoffHours > 0 && cutoffHours <= 168 && !Number.isNaN(cutoffHours);
+
   const handleRunBacktest = () => {
+    if (!isValidCutoff) return;
     runBacktest.mutate({ cutoff_hours: cutoffHours });
   };
 
@@ -41,7 +44,7 @@ export default function BacktestPage() {
             </div>
             <Button
               onClick={handleRunBacktest}
-              disabled={runBacktest.isPending}
+              disabled={runBacktest.isPending || !isValidCutoff}
             >
               {runBacktest.isPending ? (
                 <span className="flex items-center gap-2">
