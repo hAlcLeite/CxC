@@ -18,8 +18,10 @@ interface WalletWeightsProps {
 export function WalletWeights({ weights }: WalletWeightsProps) {
   if (!weights.length) {
     return (
-      <Card>
-        <CardTitle>Trust Weights</CardTitle>
+      <Card header>
+        <div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-3">
+          <CardTitle>Trust Weights</CardTitle>
+        </div>
         <CardContent className="py-8 text-center text-muted">
           No weight data available for this wallet
         </CardContent>
@@ -28,9 +30,11 @@ export function WalletWeights({ weights }: WalletWeightsProps) {
   }
 
   return (
-    <Card>
-      <CardTitle>Trust Weights</CardTitle>
-      <CardContent className="mt-4">
+    <Card header>
+      <div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-3">
+        <CardTitle>Trust Weights</CardTitle>
+      </div>
+      <CardContent className="p-4">
         <Table>
           <TableHeader>
             <TableRow>

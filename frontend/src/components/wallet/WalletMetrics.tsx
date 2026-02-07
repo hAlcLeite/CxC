@@ -18,8 +18,10 @@ interface WalletMetricsProps {
 export function WalletMetrics({ metrics }: WalletMetricsProps) {
   if (!metrics.length) {
     return (
-      <Card>
-        <CardTitle>Performance Metrics</CardTitle>
+      <Card header>
+        <div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-3">
+          <CardTitle>Performance Metrics</CardTitle>
+        </div>
         <CardContent className="py-8 text-center text-muted">
           No metrics available for this wallet
         </CardContent>
@@ -28,9 +30,11 @@ export function WalletMetrics({ metrics }: WalletMetricsProps) {
   }
 
   return (
-    <Card>
-      <CardTitle>Performance Metrics</CardTitle>
-      <CardContent className="mt-4">
+    <Card header>
+      <div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-3">
+        <CardTitle>Performance Metrics</CardTitle>
+      </div>
+      <CardContent className="p-4">
         <Table>
           <TableHeader>
             <TableRow>
