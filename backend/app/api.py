@@ -15,6 +15,7 @@ from app.config import DB_PATH
 from app.db import get_connection, init_db
 from app.schemas import (
     BacktestRequest,
+    BacktestSweepRequest,
     GenericResponse,
     HealthResponse,
     IngestRequest,
@@ -22,7 +23,7 @@ from app.schemas import (
     PolymarketIngestRequest,
     RecomputeRequest,
 )
-from app.services.backtest import run_backtest
+from app.services.backtest import run_backtest, run_backtest_sweep
 from app.services.beliefs import yes_direction
 from app.services.ingest import ingest_markets, ingest_outcomes, ingest_trades
 from app.services.observability import (
@@ -729,6 +730,49 @@ def create_app() -> FastAPI:
                 )
                 increment_metric(conn, "errors.backtest", 1.0)
             logger.exception("backtest failed")
+            raise HTTPException(status_code=500, detail=str(exc))
+
+    @app.post("/backtest/sweep", response_model=GenericResponse)
+    def backtest_sweep(req: BacktestSweepRequest, conn: sqlite3.Connection = Depends(get_conn)) -> GenericResponse:
+        logger.info("POST /backtest/sweep request: max_hours=%d", req.max_hours)
+        with conn:
+            run_track_id = start_pipeline_run(
+                conn,
+                "backtest_sweep",
+                metadata={"max_hours": req.max_hours},
+            )
+        started = time.perf_counter()
+        try:
+            result = run_backtest_sweep(conn, max_hours=req.max_hours)
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            logger.info(
+                "POST /backtest/sweep response: hours_evaluated=%s duration_ms=%.1f",
+                result.get("hours_evaluated"), duration_ms,
+            )
+            with conn:
+                finish_pipeline_run(
+                    conn,
+                    run_track_id,
+                    "success",
+                    metrics={
+                        "hours_evaluated": result.get("hours_evaluated"),
+                        "total_resolved_markets": result.get("total_resolved_markets"),
+                        "duration_ms": duration_ms,
+                    },
+                )
+            return GenericResponse(result={"tracking_run_id": run_track_id, **result})
+        except Exception as exc:
+            duration_ms = (time.perf_counter() - started) * 1000.0
+            with conn:
+                finish_pipeline_run(
+                    conn,
+                    run_track_id,
+                    "failed",
+                    metrics={"duration_ms": duration_ms},
+                    error_text=str(exc),
+                )
+                increment_metric(conn, "errors.backtest_sweep", 1.0)
+            logger.exception("backtest_sweep failed")
             raise HTTPException(status_code=500, detail=str(exc))
 
     @app.get("/backtest/{run_id}", response_model=GenericResponse)

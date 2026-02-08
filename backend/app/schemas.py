@@ -40,6 +40,10 @@ class BacktestRequest(BaseModel):
     run_id: str | None = None
 
 
+class BacktestSweepRequest(BaseModel):
+    max_hours: int = Field(default=168, gt=0, le=168)
+
+
 class IngestResponse(BaseModel):
     ingested: dict[str, int]
     db_path: str
