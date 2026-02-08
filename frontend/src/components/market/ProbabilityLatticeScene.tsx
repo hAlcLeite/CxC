@@ -29,7 +29,7 @@ export function ProbabilityLatticeScene({
 	const mountRef = useRef<HTMLDivElement | null>(null);
 	const tooltipRef = useRef<HTMLDivElement | null>(null);
 	const [hoverIndex, setHoverIndex] = useState<number | null>(null);
-	const [zoomPct, setZoomPct] = useState(100);
+	const [zoomPct, setZoomPct] = useState(140);
 	const hoverIndexRef = useRef(-1);
 
 	useEffect(() => {
@@ -128,12 +128,99 @@ export function ProbabilityLatticeScene({
 		);
 		group.add(grid);
 
+		// Axis lines
+		const axisExt = 6;
+		const xAxisGeo = track(new THREE.BufferGeometry());
+		xAxisGeo.setAttribute(
+			"position",
+			track(
+				new THREE.Float32BufferAttribute(
+					[-xSpan / 2, -ySpan / 2, 0, xSpan / 2 + axisExt, -ySpan / 2, 0],
+					3,
+				),
+			),
+		);
+		group.add(
+			new THREE.Line(
+				xAxisGeo,
+				track(new THREE.LineBasicMaterial({ color: 0xededed, transparent: true, opacity: 0.7 })),
+			),
+		);
+
+		const yAxisGeo = track(new THREE.BufferGeometry());
+		yAxisGeo.setAttribute(
+			"position",
+			track(
+				new THREE.Float32BufferAttribute(
+					[-xSpan / 2, -ySpan / 2, 0, -xSpan / 2, ySpan / 2 + axisExt, 0],
+					3,
+				),
+			),
+		);
+		group.add(
+			new THREE.Line(
+				yAxisGeo,
+				track(new THREE.LineBasicMaterial({ color: 0xededed, transparent: true, opacity: 0.7 })),
+			),
+		);
+
+		const zAxisGeo = track(new THREE.BufferGeometry());
+		zAxisGeo.setAttribute(
+			"position",
+			track(
+				new THREE.Float32BufferAttribute(
+					[-xSpan / 2, -ySpan / 2, -22, -xSpan / 2, -ySpan / 2, 24],
+					3,
+				),
+			),
+		);
+		group.add(
+			new THREE.Line(
+				zAxisGeo,
+				track(new THREE.LineBasicMaterial({ color: 0xededed, transparent: true, opacity: 0.7 })),
+			),
+		);
+
+		// Axis label sprites
+		const makeLabel = (text: string) => {
+			const canvas = document.createElement("canvas");
+			canvas.width = 256;
+			canvas.height = 64;
+			const ctx = canvas.getContext("2d");
+			if (ctx) {
+				ctx.font = "bold 22px monospace";
+				ctx.fillStyle = "#ededed";
+				ctx.textAlign = "center";
+				ctx.textBaseline = "middle";
+				ctx.fillText(text, 128, 32);
+			}
+			const tex = track(new THREE.CanvasTexture(canvas));
+			const mat = track(
+				new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false }),
+			);
+			const sprite = new THREE.Sprite(mat);
+			sprite.scale.set(18, 4.5, 1);
+			return sprite;
+		};
+
+		const xLabel = makeLabel("TIME \u2192");
+		xLabel.position.set(xSpan / 2 + 14, -ySpan / 2 - 1, 0);
+		group.add(xLabel);
+
+		const yLabel = makeLabel("\u2191 PROBABILITY");
+		yLabel.position.set(-xSpan / 2 + 10, ySpan / 2 + 8, 0);
+		group.add(yLabel);
+
+		const zLabel = makeLabel("DIVERGENCE \u2197");
+		zLabel.position.set(-xSpan / 2 + 10, -ySpan / 2 - 1, 28);
+		group.add(zLabel);
+
 		const pointsGeometry = track(new THREE.SphereGeometry(0.9, 10, 10));
 		const marketPointsMesh = new THREE.InstancedMesh(
 			pointsGeometry,
 			track(
 				new THREE.MeshBasicMaterial({
-					color: 0xbdbdbd,
+					color: 0xef4444,
 					transparent: true,
 					opacity: 0.95,
 				}),
@@ -144,7 +231,7 @@ export function ProbabilityLatticeScene({
 			pointsGeometry,
 			track(
 				new THREE.MeshBasicMaterial({
-					color: 0xffffff,
+					color: 0x3b82f6,
 					transparent: true,
 					opacity: 0.98,
 				}),
@@ -183,7 +270,7 @@ export function ProbabilityLatticeScene({
 			vectorHeadGeometry,
 			track(
 				new THREE.MeshBasicMaterial({
-					color: 0xc6c6c6,
+					color: 0xef4444,
 					transparent: true,
 					opacity: 0.9,
 				}),
@@ -194,7 +281,7 @@ export function ProbabilityLatticeScene({
 			vectorHeadGeometry,
 			track(
 				new THREE.MeshBasicMaterial({
-					color: 0xffffff,
+					color: 0x3b82f6,
 					transparent: true,
 					opacity: 0.95,
 				}),
@@ -212,7 +299,7 @@ export function ProbabilityLatticeScene({
 			vectorHeadGeometry,
 			track(
 				new THREE.MeshBasicMaterial({
-					color: 0xffffff,
+					color: 0x22c55e,
 					transparent: true,
 					opacity: 0.95,
 				}),
@@ -244,7 +331,12 @@ export function ProbabilityLatticeScene({
 			marketVectorPositions[marketIndex + 3] = arrowEnd.x;
 			marketVectorPositions[marketIndex + 4] = arrowEnd.y;
 			marketVectorPositions[marketIndex + 5] = arrowEnd.z;
-			for (let c = 0; c < 6; c += 1) marketVectorColors[marketIndex + c] = 0.66;
+			marketVectorColors[marketIndex] = 0.94;
+			marketVectorColors[marketIndex + 1] = 0.27;
+			marketVectorColors[marketIndex + 2] = 0.27;
+			marketVectorColors[marketIndex + 3] = 0.94;
+			marketVectorColors[marketIndex + 4] = 0.27;
+			marketVectorColors[marketIndex + 5] = 0.27;
 			headQuat.setFromUnitVectors(arrowUp, direction);
 			headScale.setScalar(0.86);
 			headMatrix.compose(
@@ -267,7 +359,12 @@ export function ProbabilityLatticeScene({
 			precogVectorPositions[precogIndex + 3] = arrowEnd.x;
 			precogVectorPositions[precogIndex + 4] = arrowEnd.y;
 			precogVectorPositions[precogIndex + 5] = arrowEnd.z;
-			for (let c = 0; c < 6; c += 1) precogVectorColors[precogIndex + c] = 0.9;
+			precogVectorColors[precogIndex] = 0.23;
+			precogVectorColors[precogIndex + 1] = 0.51;
+			precogVectorColors[precogIndex + 2] = 0.96;
+			precogVectorColors[precogIndex + 3] = 0.23;
+			precogVectorColors[precogIndex + 4] = 0.51;
+			precogVectorColors[precogIndex + 5] = 0.96;
 			headQuat.setFromUnitVectors(arrowUp, direction);
 			headScale.setScalar(0.94);
 			headMatrix.compose(
@@ -296,7 +393,12 @@ export function ProbabilityLatticeScene({
 
 			const base = 0.34 + clamp(data[i].confidence, 0, 1) * 0.52;
 			divergenceBase[i] = base;
-			for (let c = 0; c < 6; c += 1) divergenceColors[j + c] = base;
+			divergenceColors[j] = 0.13 * base * 1.6;
+			divergenceColors[j + 1] = 0.77 * base * 1.6;
+			divergenceColors[j + 2] = 0.37 * base * 1.6;
+			divergenceColors[j + 3] = 0.13 * base * 1.6;
+			divergenceColors[j + 4] = 0.77 * base * 1.6;
+			divergenceColors[j + 5] = 0.37 * base * 1.6;
 
 			const headScaleValue = 0.78 + clamp(data[i].confidence, 0, 1) * 0.35;
 			divergenceHeadScales[i] = headScaleValue;
@@ -421,8 +523,8 @@ export function ProbabilityLatticeScene({
 		let rotXTarget = -0.2;
 		let rotY = rotYTarget;
 		let rotX = rotXTarget;
-		let camDistance = 156;
-		let camDistanceTarget = 156;
+		let camDistance = 111;
+		let camDistanceTarget = 111;
 		let width = 1;
 		let height = 1;
 		let rafId = 0;
@@ -438,12 +540,12 @@ export function ProbabilityLatticeScene({
 				const dist = Math.abs(i - focusIdx);
 				const falloff = clamp(1 - dist / 6, 0, 1);
 				const shade = clamp(divergenceBase[i] + falloff * 0.36, 0, 1);
-				divergenceColors[j] = shade;
-				divergenceColors[j + 1] = shade;
-				divergenceColors[j + 2] = shade;
-				divergenceColors[j + 3] = shade;
-				divergenceColors[j + 4] = shade;
-				divergenceColors[j + 5] = shade;
+				divergenceColors[j] = 0.13 * shade * 1.6;
+				divergenceColors[j + 1] = 0.77 * shade * 1.6;
+				divergenceColors[j + 2] = 0.37 * shade * 1.6;
+				divergenceColors[j + 3] = 0.13 * shade * 1.6;
+				divergenceColors[j + 4] = 0.77 * shade * 1.6;
+				divergenceColors[j + 5] = 0.37 * shade * 1.6;
 
 				headScale.setScalar(divergenceHeadScales[i] + falloff * 0.18);
 				direction.subVectors(precognitionPoints[i], marketPoints[i]).normalize();
@@ -527,7 +629,7 @@ export function ProbabilityLatticeScene({
 
 		const onWheel = (event: WheelEvent) => {
 			event.preventDefault();
-			camDistanceTarget = clamp(camDistanceTarget + event.deltaY * 0.055, 108, 235);
+			camDistanceTarget = clamp(camDistanceTarget + event.deltaY * 0.055, 78, 235);
 			setZoomPct(Math.round((156 / camDistanceTarget) * 100));
 		};
 
@@ -664,21 +766,21 @@ export function ProbabilityLatticeScene({
 				<div className="border border-foreground/45 bg-background/82 px-2 py-1 text-[11px] uppercase tracking-[0.08em]">
 					3D Probability Lattice · {sourceLabel}
 				</div>
-				<div className="border border-foreground/45 bg-background/82 px-2 py-1 font-mono text-[11px] text-muted">
+				<div className="border border-foreground/45 bg-background/82 px-2 py-1 font-mono text-[11px]">
 					Zoom {zoomPct}%
 				</div>
 			</div>
 
 			<div className="pointer-events-none absolute left-3 top-12 border border-foreground/45 bg-background/82 px-2 py-1.5 font-mono text-[11px] leading-5">
-				<div className="text-muted">Market: {active.market.toFixed(1)}%</div>
+				<div>Market: {active.market.toFixed(1)}%</div>
 				<div className="text-foreground">
 					Precognition: {active.precognition.toFixed(1)}%
 				</div>
-				<div className="text-muted">
+				<div>
 					Divergence: {active.divergence > 0 ? "+" : ""}
 					{active.divergence.toFixed(1)}%
 				</div>
-				<div className="text-muted">
+				<div>
 					Confidence: {(active.confidence * 100).toFixed(0)}%
 				</div>
 			</div>
@@ -689,7 +791,7 @@ export function ProbabilityLatticeScene({
 				<span>{data[data.length - 1]?.time}</span>
 			</div>
 
-			<div className="pointer-events-none absolute bottom-8 right-3 border border-foreground/40 bg-background/82 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+			<div className="pointer-events-none absolute bottom-8 right-3 border border-foreground/40 bg-background/82 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em]">
 				Drag: orbit | Wheel: zoom | Hover: inspect
 			</div>
 

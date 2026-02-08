@@ -80,6 +80,10 @@ Polymarket APIs / CSV
 - `PRECOGNITION_HALF_LIFE_HOURS` - Belief inference decay (default: 48)
 - `PRECOGNITION_BACKTEST_CUTOFF_HOURS` - Backtest horizon (default: 12)
 
+## Shell Notes
+
+- The user has zoxide installed which overrides `cd`. Claude Code does not have zoxide, so when running `cd` commands always use `bash -c "<COMMAND>"`.
+
 ## Important Notes
 
 - **SQLite locking**: Only one writer process at a time. Stop server before running ingest jobs.

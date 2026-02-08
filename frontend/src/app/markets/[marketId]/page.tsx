@@ -1,6 +1,6 @@
 "use client";
 
-import { use } from "react";
+import { use, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { LoadingState, Card, CardContent, Badge } from "@/components/ui";
@@ -22,7 +22,12 @@ export default function MarketDetailPage({
 	const from = searchParams.get("from");
 	const backHref = from === "alerts" ? "/alerts" : "/screener";
 	const backLabel = from === "alerts" ? "Back to Alerts" : "Back to Screener";
-	const { data, isLoading, error } = useMarket(marketId);
+	const [historyPoints, setHistoryPoints] = useState(50);
+	const { data, isLoading, error } = useMarket(marketId, historyPoints);
+
+	if (data) {
+		console.log("[useMarket] time_series.length =", data.time_series?.length);
+	}
 
 	if (isLoading) {
 		return <LoadingState message="Loading market data..." />;
@@ -87,7 +92,12 @@ export default function MarketDetailPage({
 			/>
 
 			{time_series.length > 1 ? (
-				<ProbabilityChart marketId={marketId} timeSeries={time_series} />
+				<ProbabilityChart
+					marketId={marketId}
+					timeSeries={time_series}
+					historyPoints={historyPoints}
+					onHistoryPointsChange={setHistoryPoints}
+				/>
 			) : (
 				<Card header>
 					<div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-4">

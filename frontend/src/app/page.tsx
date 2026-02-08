@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	Badge,
@@ -21,18 +22,18 @@ import { ProbabilityChart } from "@/components/market/ProbabilityChart";
 import type { TimeSeriesPoint } from "@/lib/types";
 import styles from "./page.module.css";
 
+const EDGE_IMAGES = [
+	{ src: "/backboardlogo.avif", alt: "Backboard" },
+	{ src: "/gemlogo.jpeg", alt: "Gem" },
+	{ src: "/snowflakelogo.webp", alt: "Snowflake" },
+] as const;
+
 export default function LandingPage() {
 	const titleText = "PRECOGNITION";
 	const [tickMarks, setTickMarks] = useState<Array<{ id: number; left: number; height: number }>>([]);
 	const [ghostOffset, setGhostOffset] = useState({ x: 0, y: 0 });
 	const ghostOffsetRef = useRef({ x: 0, y: 0 });
 	const landingPreviewSeries = useMemo<TimeSeriesPoint[]>(() => [], []);
-	const scrollToContent = () => {
-		const section = document.getElementById("content-start");
-		if (section) {
-			section.scrollIntoView({ behavior: "smooth", block: "start" });
-		}
-	};
 
 	useEffect(() => {
 		const spawnTickMarks = () => {
@@ -101,6 +102,7 @@ export default function LandingPage() {
 			window.cancelAnimationFrame(rafId);
 		};
 	}, []);
+
 	return (
 		<div className="relative isolate space-y-16 pb-12">
 			<ThreeTechnologyBackground />
@@ -184,16 +186,37 @@ export default function LandingPage() {
 			<section id="visualization" className="space-y-4 scroll-mt-24">
 				<div className="flex flex-wrap items-end justify-between gap-3">
 					<div>
-						<h2 className="text-3xl font-bold">Living Influence Graph</h2>
+						<h2 className="text-3xl font-bold">Live Influence Graphs</h2>
 						<p className="mt-2">
-							Interactive Probability DNA and 3D lattice preview using the current graph implementation.
+							Tracking granular divergences using PCA embeddings and using 3D Lattice for magnitude.
 						</p>
 					</div>
 				</div>
 
-				<ProbabilityChart marketId="landing-preview" timeSeries={landingPreviewSeries} compact />
+				<ProbabilityChart marketId="landing-preview" timeSeries={landingPreviewSeries} />
 			</section>
 
+			<section id="edge" className="space-y-6 scroll-mt-24">
+				<div>
+					<h2 className="text-3xl font-bold">Our EDGE: Human Explainability</h2>
+				</div>
+				<div className="flex flex-wrap gap-6">
+					{EDGE_IMAGES.map((item) => (
+						<div key={item.src} className="flex min-w-[180px] flex-1 items-center justify-center border-2 border-foreground/20 bg-foreground/5 p-4">
+							<Image
+								src={item.src}
+								alt={item.alt}
+								width={200}
+								height={160}
+								className="h-40 w-full object-contain"
+							/>
+						</div>
+					))}
+				</div>
+				<p className="text-lg font-bold text-white">
+					Gain insights on divergences for your market directly from Gemini (+BackBoard) and Snowflake with live sentiment analysis.
+				</p>
+			</section>
 
 			<section id="demo" className="space-y-4 scroll-mt-24 w-full">
 				<div>

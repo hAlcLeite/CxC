@@ -32,7 +32,7 @@ export function BrierSweepChart({ hourlyResults }: BrierSweepChartProps) {
 			<CardContent className="mt-4">
 				<div className="h-80">
 					<ResponsiveContainer width="100%" height="100%">
-						<LineChart data={chartData}>
+						<LineChart data={chartData} margin={{ bottom: 5 }}>
 							<XAxis
 								dataKey="cutoff_hours"
 								reversed
@@ -77,7 +77,7 @@ export function BrierSweepChart({ hourlyResults }: BrierSweepChartProps) {
 								type="monotone"
 								dataKey="market"
 								name="Market"
-								stroke="#666666"
+								stroke="#ef4444"
 								strokeWidth={2}
 								dot={false}
 							/>

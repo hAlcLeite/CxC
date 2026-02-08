@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { Card, CardTitle, CardContent } from "@/components/ui";
 import { SiGraphite } from "react-icons/si";
 import type { TimeSeriesPoint } from "@/lib/types";
@@ -9,10 +12,14 @@ import { fetchProbabilityEmbedding } from "@/lib/api";
 import { ProbabilityLatticeScene } from "@/components/market/ProbabilityLatticeScene";
 import { format } from "date-fns";
 
+const SNAPSHOT_OPTIONS = [7, 10, 30, 50] as const;
+
 interface ProbabilityChartProps {
 	marketId: string;
 	timeSeries: TimeSeriesPoint[];
 	compact?: boolean;
+	historyPoints?: number;
+	onHistoryPointsChange?: (n: number) => void;
 }
 
 type VisualizationMode = "dna" | "lattice";
@@ -59,18 +66,18 @@ function generateMockDnaData(count = 80): DnaPoint[] {
 		market = clamp(market + drift, 0.08, 0.92);
 		precognition = clamp(
 			precognition +
-				drift * 0.6 +
-				divergencePulse * 0.42 +
-				(seededNoise(i + 173) - 0.5) * 0.008,
+			drift * 0.6 +
+			divergencePulse * 0.42 +
+			(seededNoise(i + 173) - 0.5) * 0.008,
 			0.06,
 			0.94,
 		);
 		const divergence = Math.abs(precognition - market);
 		const confidence = clamp(
 			0.38 +
-				divergence * 3.2 +
-				Math.sin(i * 0.11) * 0.14 +
-				(seededNoise(i + 251) - 0.5) * 0.06,
+			divergence * 3.2 +
+			Math.sin(i * 0.11) * 0.14 +
+			(seededNoise(i + 251) - 0.5) * 0.06,
 			0.12,
 			0.97,
 		);
@@ -124,6 +131,8 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 			}
 			return item;
 		};
+
+		const fatLineMaterials: LineMaterial[] = [];
 
 		const dnaGroup = new THREE.Group();
 		scene.add(dnaGroup);
@@ -250,12 +259,148 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 		);
 		dnaGroup.add(axis);
 
+		// ---- PCA spine line with curvature-based brightness (Option C) ----
+		const spinePoints = centers.length > 1 ? centers : rungMidpoints;
+		if (spinePoints.length > 1) {
+			// Compute per-segment curvature for brightness
+			const spineCurvatures = new Float32Array(spinePoints.length);
+			for (let i = 1; i < spinePoints.length - 1; i += 1) {
+				const prev = spinePoints[i - 1];
+				const curr = spinePoints[i];
+				const next = spinePoints[i + 1];
+				const d1x = curr.x - prev.x;
+				const d1y = curr.y - prev.y;
+				const d1z = curr.z - prev.z;
+				const d2x = next.x - curr.x;
+				const d2y = next.y - curr.y;
+				const d2z = next.z - curr.z;
+				const l1 = Math.sqrt(d1x * d1x + d1y * d1y + d1z * d1z) || 1e-6;
+				const l2 = Math.sqrt(d2x * d2x + d2y * d2y + d2z * d2z) || 1e-6;
+				const dot =
+					(d1x * d2x + d1y * d2y + d1z * d2z) / (l1 * l2);
+				spineCurvatures[i] = 1 - clamp(dot, -1, 1);
+			}
+			spineCurvatures[0] = spineCurvatures[1] || 0;
+			spineCurvatures[spinePoints.length - 1] =
+				spineCurvatures[spinePoints.length - 2] || 0;
+
+			// Normalize curvature to 0-1 range
+			let maxCurv = 0;
+			for (let i = 0; i < spineCurvatures.length; i += 1) {
+				if (spineCurvatures[i] > maxCurv) maxCurv = spineCurvatures[i];
+			}
+			const curvScale = maxCurv > 1e-6 ? 1 / maxCurv : 1;
+
+			// Build spine as line segments with per-vertex color for curvature brightness
+			const segCount = spinePoints.length - 1;
+			const spineSegPositions = new Float32Array(segCount * 2 * 3);
+			const spineSegColors = new Float32Array(segCount * 2 * 3);
+			for (let i = 0; i < segCount; i += 1) {
+				const a = spinePoints[i];
+				const b = spinePoints[i + 1];
+				const j = i * 6;
+				spineSegPositions[j] = a.x;
+				spineSegPositions[j + 1] = a.y;
+				spineSegPositions[j + 2] = a.z;
+				spineSegPositions[j + 3] = b.x;
+				spineSegPositions[j + 4] = b.y;
+				spineSegPositions[j + 5] = b.z;
+				// Brightness: base 0.45, rises to 1.0 with curvature
+				const cA = 0.45 + clamp(spineCurvatures[i] * curvScale, 0, 1) * 0.55;
+				const cB = 0.45 + clamp(spineCurvatures[i + 1] * curvScale, 0, 1) * 0.55;
+				spineSegColors[j] = cA;
+				spineSegColors[j + 1] = cA;
+				spineSegColors[j + 2] = cA;
+				spineSegColors[j + 3] = cB;
+				spineSegColors[j + 4] = cB;
+				spineSegColors[j + 5] = cB;
+			}
+			const spineGeometry = new LineSegmentsGeometry();
+			disposables.push(spineGeometry as unknown as { dispose: () => void });
+			spineGeometry.setPositions(spineSegPositions);
+			spineGeometry.setColors(spineSegColors);
+			const spineLineMat = new LineMaterial({
+				worldUnits: false,
+				resolution: new THREE.Vector2(1, 1),
+			});
+			spineLineMat.vertexColors = true;
+			spineLineMat.transparent = true;
+			spineLineMat.opacity = 1.0;
+			spineLineMat.linewidth = 1.5;
+			disposables.push(spineLineMat as unknown as { dispose: () => void });
+			fatLineMaterials.push(spineLineMat);
+			const spineLine = new LineSegments2(spineGeometry, spineLineMat);
+			dnaGroup.add(spineLine);
+		}
+
+		// ---- Distance-from-spine bars (Option B) ----
+		// Short lines from spine center to each strand, showing how far each deviates
+		const distBarCount = data.length * 2; // one bar per strand per point
+		const distBarPositions = new Float32Array(distBarCount * 2 * 3);
+		const distBarColors = new Float32Array(distBarCount * 2 * 3);
+		for (let i = 0; i < data.length; i += 1) {
+			const sp = spinePoints[i] || rungMidpoints[i];
+			const mkt = marketPoints[i];
+			const pcg = precognitionPoints[i];
+
+			// Market bar (red-tinted)
+			const mj = i * 2 * 6;
+			distBarPositions[mj] = sp.x;
+			distBarPositions[mj + 1] = sp.y;
+			distBarPositions[mj + 2] = sp.z;
+			distBarPositions[mj + 3] = mkt.x;
+			distBarPositions[mj + 4] = mkt.y;
+			distBarPositions[mj + 5] = mkt.z;
+			// Spine end: dim, strand end: brighter
+			distBarColors[mj] = 0.3;
+			distBarColors[mj + 1] = 0.1;
+			distBarColors[mj + 2] = 0.1;
+			distBarColors[mj + 3] = 0.7;
+			distBarColors[mj + 4] = 0.2;
+			distBarColors[mj + 5] = 0.2;
+
+			// Precognition bar (blue-tinted)
+			const pj = mj + 6;
+			distBarPositions[pj] = sp.x;
+			distBarPositions[pj + 1] = sp.y;
+			distBarPositions[pj + 2] = sp.z;
+			distBarPositions[pj + 3] = pcg.x;
+			distBarPositions[pj + 4] = pcg.y;
+			distBarPositions[pj + 5] = pcg.z;
+			distBarColors[pj] = 0.1;
+			distBarColors[pj + 1] = 0.1;
+			distBarColors[pj + 2] = 0.3;
+			distBarColors[pj + 3] = 0.2;
+			distBarColors[pj + 4] = 0.2;
+			distBarColors[pj + 5] = 0.7;
+		}
+		const distBarGeometry = track(new THREE.BufferGeometry());
+		distBarGeometry.setAttribute(
+			"position",
+			track(new THREE.BufferAttribute(distBarPositions, 3)),
+		);
+		distBarGeometry.setAttribute(
+			"color",
+			track(new THREE.BufferAttribute(distBarColors, 3)),
+		);
+		const distBars = new THREE.LineSegments(
+			distBarGeometry,
+			track(
+				new THREE.LineBasicMaterial({
+					vertexColors: true,
+					transparent: true,
+					opacity: 0.28,
+				}),
+			),
+		);
+		dnaGroup.add(distBars);
+
 		const pointsGeometry = track(new THREE.SphereGeometry(0.9, 10, 10));
 		const marketPointsMesh = new THREE.InstancedMesh(
 			pointsGeometry,
 			track(
 				new THREE.MeshBasicMaterial({
-					color: 0xd4d4d4,
+					color: 0xef4444,
 					transparent: true,
 					opacity: 0.95,
 				}),
@@ -266,7 +411,7 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 			pointsGeometry,
 			track(
 				new THREE.MeshBasicMaterial({
-					color: 0xffffff,
+					color: 0x3b82f6,
 					transparent: true,
 					opacity: 0.98,
 				}),
@@ -306,7 +451,7 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 			vectorHeadGeometry,
 			track(
 				new THREE.MeshBasicMaterial({
-					color: 0xd0d0d0,
+					color: 0xef4444,
 					transparent: true,
 					opacity: 0.9,
 				}),
@@ -317,7 +462,7 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 			vectorHeadGeometry,
 			track(
 				new THREE.MeshBasicMaterial({
-					color: 0xffffff,
+					color: 0x3b82f6,
 					transparent: true,
 					opacity: 0.95,
 				}),
@@ -335,7 +480,7 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 			vectorHeadGeometry,
 			track(
 				new THREE.MeshBasicMaterial({
-					color: 0xffffff,
+					color: 0x22c55e,
 					transparent: true,
 					opacity: 0.95,
 				}),
@@ -367,7 +512,12 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 			marketVectorPositions[marketIndex + 3] = arrowEnd.x;
 			marketVectorPositions[marketIndex + 4] = arrowEnd.y;
 			marketVectorPositions[marketIndex + 5] = arrowEnd.z;
-			for (let c = 0; c < 6; c += 1) marketVectorColors[marketIndex + c] = 0.67;
+			marketVectorColors[marketIndex] = 0.94;
+			marketVectorColors[marketIndex + 1] = 0.27;
+			marketVectorColors[marketIndex + 2] = 0.27;
+			marketVectorColors[marketIndex + 3] = 0.94;
+			marketVectorColors[marketIndex + 4] = 0.27;
+			marketVectorColors[marketIndex + 5] = 0.27;
 			headQuat.setFromUnitVectors(arrowUp, dir);
 			headScale.setScalar(0.86);
 			headMatrix.compose(
@@ -390,7 +540,12 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 			precogVectorPositions[precogIndex + 3] = arrowEnd.x;
 			precogVectorPositions[precogIndex + 4] = arrowEnd.y;
 			precogVectorPositions[precogIndex + 5] = arrowEnd.z;
-			for (let c = 0; c < 6; c += 1) precogVectorColors[precogIndex + c] = 0.9;
+			precogVectorColors[precogIndex] = 0.23;
+			precogVectorColors[precogIndex + 1] = 0.51;
+			precogVectorColors[precogIndex + 2] = 0.96;
+			precogVectorColors[precogIndex + 3] = 0.23;
+			precogVectorColors[precogIndex + 4] = 0.51;
+			precogVectorColors[precogIndex + 5] = 0.96;
 			headQuat.setFromUnitVectors(arrowUp, dir);
 			headScale.setScalar(0.95);
 			headMatrix.compose(
@@ -419,7 +574,12 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 
 			const base = 0.4 + clamp(data[i].confidence, 0, 1) * 0.52;
 			divergenceBase[i] = base;
-			for (let c = 0; c < 6; c += 1) divergenceColors[j + c] = base;
+			divergenceColors[j] = 0.13 * base * 1.6;
+			divergenceColors[j + 1] = 0.77 * base * 1.6;
+			divergenceColors[j + 2] = 0.37 * base * 1.6;
+			divergenceColors[j + 3] = 0.13 * base * 1.6;
+			divergenceColors[j + 4] = 0.77 * base * 1.6;
+			divergenceColors[j + 5] = 0.37 * base * 1.6;
 
 			const headScaleValue = 0.8 + clamp(data[i].confidence, 0, 1) * 0.38;
 			divergenceHeadScales[i] = headScaleValue;
@@ -436,45 +596,37 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 		precogHeads.instanceMatrix.needsUpdate = true;
 		divergenceHeads.instanceMatrix.needsUpdate = true;
 
-		const marketVectorGeometry = track(new THREE.BufferGeometry());
-		marketVectorGeometry.setAttribute(
-			"position",
-			track(new THREE.BufferAttribute(marketVectorPositions, 3)),
-		);
-		marketVectorGeometry.setAttribute(
-			"color",
-			track(new THREE.BufferAttribute(marketVectorColors, 3)),
-		);
-		const marketVectors = new THREE.LineSegments(
-			marketVectorGeometry,
-			track(
-				new THREE.LineBasicMaterial({
-					vertexColors: true,
-					transparent: true,
-					opacity: 0.85,
-				}),
-			),
-		);
+		const marketVectorGeometry = new LineSegmentsGeometry();
+		disposables.push(marketVectorGeometry as unknown as { dispose: () => void });
+		marketVectorGeometry.setPositions(marketVectorPositions);
+		marketVectorGeometry.setColors(marketVectorColors);
+		const marketVectorMat = new LineMaterial({
+			worldUnits: false,
+			resolution: new THREE.Vector2(1, 1),
+		});
+		marketVectorMat.vertexColors = true;
+		marketVectorMat.transparent = true;
+		marketVectorMat.opacity = 0.85;
+		marketVectorMat.linewidth = 1.5;
+		disposables.push(marketVectorMat as unknown as { dispose: () => void });
+		fatLineMaterials.push(marketVectorMat);
+		const marketVectors = new LineSegments2(marketVectorGeometry, marketVectorMat);
 
-		const precogVectorGeometry = track(new THREE.BufferGeometry());
-		precogVectorGeometry.setAttribute(
-			"position",
-			track(new THREE.BufferAttribute(precogVectorPositions, 3)),
-		);
-		precogVectorGeometry.setAttribute(
-			"color",
-			track(new THREE.BufferAttribute(precogVectorColors, 3)),
-		);
-		const precogVectors = new THREE.LineSegments(
-			precogVectorGeometry,
-			track(
-				new THREE.LineBasicMaterial({
-					vertexColors: true,
-					transparent: true,
-					opacity: 0.9,
-				}),
-			),
-		);
+		const precogVectorGeometry = new LineSegmentsGeometry();
+		disposables.push(precogVectorGeometry as unknown as { dispose: () => void });
+		precogVectorGeometry.setPositions(precogVectorPositions);
+		precogVectorGeometry.setColors(precogVectorColors);
+		const precogVectorMat = new LineMaterial({
+			worldUnits: false,
+			resolution: new THREE.Vector2(1, 1),
+		});
+		precogVectorMat.vertexColors = true;
+		precogVectorMat.transparent = true;
+		precogVectorMat.opacity = 0.9;
+		precogVectorMat.linewidth = 1.5;
+		disposables.push(precogVectorMat as unknown as { dispose: () => void });
+		fatLineMaterials.push(precogVectorMat);
+		const precogVectors = new LineSegments2(precogVectorGeometry, precogVectorMat);
 
 		const divergenceGeometry = track(new THREE.BufferGeometry());
 		divergenceGeometry.setAttribute(
@@ -564,6 +716,9 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 			camera.updateProjectionMatrix();
 			renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 			renderer.setSize(width, height, false);
+			for (const mat of fatLineMaterials) {
+				mat.resolution.set(width, height);
+			}
 		};
 
 		const refreshConnectorHighlight = (focusIdx: number) => {
@@ -572,12 +727,12 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 				const distance = Math.abs(i - focusIdx);
 				const falloff = clamp(1 - distance / 6, 0, 1);
 				const shade = clamp(divergenceBase[i] + falloff * 0.35, 0, 1);
-				divergenceColors[j] = shade;
-				divergenceColors[j + 1] = shade;
-				divergenceColors[j + 2] = shade;
-				divergenceColors[j + 3] = shade;
-				divergenceColors[j + 4] = shade;
-				divergenceColors[j + 5] = shade;
+				divergenceColors[j] = 0.13 * shade * 1.6;
+				divergenceColors[j + 1] = 0.77 * shade * 1.6;
+				divergenceColors[j + 2] = 0.37 * shade * 1.6;
+				divergenceColors[j + 3] = 0.13 * shade * 1.6;
+				divergenceColors[j + 4] = 0.77 * shade * 1.6;
+				divergenceColors[j + 5] = 0.37 * shade * 1.6;
 
 				headScale.setScalar(divergenceHeadScales[i] + falloff * 0.16);
 				dir.subVectors(precognitionPoints[i], marketPoints[i]).normalize();
@@ -793,21 +948,21 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 
 			<div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-4">
 				<div className="border border-foreground/45 bg-background/82 px-2 py-1 text-[11px] uppercase tracking-[0.08em]">
-					Probability DNA · {sourceLabel}
+					"DNA PCA"· {sourceLabel}
 				</div>
-				<div className="border border-foreground/45 bg-background/82 px-2 py-1 font-mono text-[11px] text-muted">
+				<div className="border border-foreground/45 bg-background/82 px-2 py-1 font-mono text-[11px]">
 					Zoom {zoomPct}%
 				</div>
 			</div>
 
 			<div className="pointer-events-none absolute left-3 top-12 border border-foreground/45 bg-background/82 px-2 py-1.5 font-mono text-[11px] leading-5">
-				<div className="text-muted">Market: {active.market.toFixed(1)}%</div>
-				<div className="text-foreground">Precognition: {active.precognition.toFixed(1)}%</div>
-				<div className="text-muted">
+				<div>Market: {active.market.toFixed(1)}%</div>
+				<div>Precognition: {active.precognition.toFixed(1)}%</div>
+				<div>
 					Divergence: {active.divergence > 0 ? "+" : ""}
 					{active.divergence.toFixed(1)}%
 				</div>
-				<div className="text-muted">Confidence: {(active.confidence * 100).toFixed(0)}%</div>
+				<div>Confidence: {(active.confidence * 100).toFixed(0)}%</div>
 			</div>
 
 			<div className="pointer-events-none absolute bottom-3 left-3 right-3 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
@@ -816,7 +971,7 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 				<span>{data[data.length - 1]?.time}</span>
 			</div>
 
-			<div className="pointer-events-none absolute bottom-8 right-3 border border-foreground/40 bg-background/82 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+			<div className="pointer-events-none absolute bottom-8 right-3 border border-foreground/40 bg-background/82 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em]">
 				Drag: orbit | Wheel: zoom | Hover: inspect
 			</div>
 
@@ -825,7 +980,7 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 				className="pointer-events-none absolute z-20 border border-foreground/55 bg-background px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-foreground opacity-0 transition-opacity"
 				style={{ left: 0, top: 0 }}
 			>
-				<div className="text-muted">{active.time}</div>
+				<div className="text-white">{active.time}</div>
 				<div>Market {active.market.toFixed(1)}%</div>
 				<div>Precognition {active.precognition.toFixed(1)}%</div>
 				<div>
@@ -838,12 +993,14 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 	);
 }
 
-export function ProbabilityChart({ marketId, timeSeries, compact = false }: ProbabilityChartProps) {
+export function ProbabilityChart({ marketId, timeSeries, compact = false, historyPoints, onHistoryPointsChange }: ProbabilityChartProps) {
 	const [useFullScale, setUseFullScale] = useState(false);
 	const [visualizationMode, setVisualizationMode] =
 		useState<VisualizationMode>("dna");
 	const [embeddedData, setEmbeddedData] = useState<DnaPoint[] | null>(null);
 	const [embeddingFailed, setEmbeddingFailed] = useState(false);
+	const [showLatticeHelp, setShowLatticeHelp] = useState(false);
+	const [showHelixHelp, setShowHelixHelp] = useState(false);
 	const isMock = timeSeries.length < 2;
 
 	useEffect(() => {
@@ -853,15 +1010,17 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 		const load = async () => {
 			try {
 				const result = await fetchProbabilityEmbedding(marketId, {
-					historyPoints: clamp(Math.max(timeSeries.length, 80), 10, 300),
+					historyPoints: Math.max(historyPoints ?? timeSeries.length, 10),
 					window: 5,
 				});
 				if (isCancelled) return;
 				if (!result.points || result.points.length < 2) {
+					console.log("[ProbabilityChart] embedding returned insufficient points:", result.points?.length ?? 0);
 					setEmbeddingFailed(true);
 					setEmbeddedData(null);
 					return;
 				}
+				console.log("[ProbabilityChart] embedding points.length =", result.points.length);
 				setEmbeddedData(
 					result.points.map((point) => ({
 						time: format(new Date(point.snapshot_time), "MMM d HH:mm"),
@@ -887,15 +1046,18 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 		return () => {
 			isCancelled = true;
 		};
-	}, [isMock, marketId, timeSeries.length]);
+	}, [isMock, marketId, timeSeries.length, historyPoints]);
 
 	const chartData = useMemo<DnaPoint[]>(() => {
 		if (embeddedData && embeddedData.length > 1) {
+			console.log("[ProbabilityChart] chartData source=embedding, length =", embeddedData.length);
 			return embeddedData;
 		}
 		if (isMock) {
+			console.log("[ProbabilityChart] chartData source=mock (timeSeries.length < 2)");
 			return generateMockDnaData(80);
 		}
+		console.log("[ProbabilityChart] chartData source=timeseries, length =", timeSeries.length);
 		return timeSeries.map((point) => ({
 			time: format(new Date(point.snapshot_time), "MMM d HH:mm"),
 			market: point.market_prob * 100,
@@ -960,69 +1122,225 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 			<CardContent className="p-4">
 				{!compact && (
 					<div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-						<div className="inline-flex border-2 border-foreground p-0.5">
-							<button
-								type="button"
-								onClick={() => setVisualizationMode("dna")}
-								className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${
-									visualizationMode === "dna"
+						<div className="flex flex-wrap items-center gap-2">
+							<div className="inline-flex border-2 border-foreground p-0.5">
+								<button
+									type="button"
+									onClick={() => setVisualizationMode("dna")}
+									className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${visualizationMode === "dna"
 										? "bg-foreground text-background"
 										: "bg-background text-foreground hover:bg-foreground hover:text-background"
-								}`}
-							>
-								Probability DNA
-							</button>
-							<button
-								type="button"
-								onClick={() => setVisualizationMode("lattice")}
-								className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${
-									visualizationMode === "lattice"
+										}`}
+								>
+									Probability Helix
+								</button>
+								<button
+									type="button"
+									onClick={() => setVisualizationMode("lattice")}
+									className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${visualizationMode === "lattice"
 										? "bg-foreground text-background"
 										: "bg-background text-foreground hover:bg-foreground hover:text-background"
-								}`}
-							>
-								3D Lattice
-							</button>
+										}`}
+								>
+									3D Lattice
+								</button>
+							</div>
+							{onHistoryPointsChange && (
+								<div className="inline-flex border-2 border-foreground p-0.5">
+									{SNAPSHOT_OPTIONS.map((n) => (
+										<button
+											key={n}
+											type="button"
+											onClick={() => onHistoryPointsChange(n)}
+											className={`px-3 py-1 text-xs font-mono transition-colors ${(historyPoints ?? 50) === n
+												? "bg-foreground text-background"
+												: "bg-background text-foreground hover:bg-foreground hover:text-background"
+												}`}
+										>
+											{n}
+										</button>
+									))}
+								</div>
+							)}
 						</div>
-						<div className="inline-flex border-2 border-foreground p-0.5">
-							<button
-								type="button"
-								onClick={() => setUseFullScale(false)}
-								className={`px-3 py-1 text-xs font-mono transition-colors ${
-									!useFullScale
+						<div className="flex items-center gap-2">
+							<div className="inline-flex border-2 border-foreground p-0.5">
+								<button
+									type="button"
+									onClick={() => setUseFullScale(false)}
+									className={`px-3 py-1 text-xs font-mono transition-colors ${!useFullScale
 										? "bg-foreground text-background"
 										: "bg-background text-foreground hover:bg-foreground hover:text-background"
-								}`}
-							>
-								Focused
-							</button>
-							<button
-								type="button"
-								onClick={() => setUseFullScale(true)}
-								className={`px-3 py-1 text-xs font-mono transition-colors ${
-									useFullScale
+										}`}
+								>
+									DATA
+								</button>
+								<button
+									type="button"
+									onClick={() => setUseFullScale(true)}
+									className={`px-3 py-1 text-xs font-mono transition-colors ${useFullScale
 										? "bg-foreground text-background"
 										: "bg-background text-foreground hover:bg-foreground hover:text-background"
-								}`}
-							>
-								Full 0-100
-							</button>
+										}`}
+								>
+									0-100%
+								</button>
+							</div>
+							{visualizationMode === "dna" && (
+								<div className="relative">
+									<button
+										type="button"
+										onClick={() => setShowHelixHelp((v) => !v)}
+										className={`flex h-[30px] w-[30px] items-center justify-center border-2 border-foreground text-sm font-bold transition-colors ${showHelixHelp
+											? "bg-foreground text-background"
+											: "bg-background text-foreground hover:bg-foreground hover:text-background"
+											}`}
+									>
+										?
+									</button>
+									{showHelixHelp && (
+										<div className="absolute right-0 top-10 z-30 w-72 border-2 border-foreground bg-background p-3 text-xs leading-relaxed">
+											<div className="mb-2 font-bold uppercase tracking-[0.08em]">
+												Reading the Probability Helix
+											</div>
+											<div className="space-y-1.5">
+												<p>
+													Two strands twist around a curved spine. The spine&apos;s
+													shape is driven by PCA.
+												</p>
+												<div className="my-2 border-t border-foreground/20 pt-2">
+													<p>
+														<span className="text-blue-500">&bull;</span> Blue =
+														Precognition (smart money)
+													</p>
+													<p>
+														<span className="text-red-500">&bull;</span> Red =
+														Market consensus price
+													</p>
+													<p>
+														<span className="text-green-500">&bull;</span> Green =
+														Divergence connectors (brighter = higher confidence)
+													</p>
+												</div>
+												<p>
+													<strong>Strand gap</strong> = divergence. Strands
+													pulling apart means smart money and the market disagree.
+												</p>
+												<div className="my-2 border-t border-foreground/20 pt-2 font-bold uppercase tracking-[0.07em]">
+													The PCA spine
+												</div>
+												<p>
+													The backbone is computed from 14 market features: price
+													levels, momentum, rolling trends, divergence velocity,
+													and confidence. PCA compresses these into 3 principal
+													directions.
+												</p>
+												<p>
+													A <strong>straight spine</strong> = stable regime. A{" "}
+													<strong>bending spine</strong> = shifting dynamics
+													&mdash; momentum changed, divergence accelerated, or
+													confidence spiked.
+												</p>
+												<p className="text-muted">
+													The spine shape tells you <em>how</em> the market is
+													evolving; the strand gap tells you <em>how much</em>{" "}
+													disagreement exists.
+												</p>
+											</div>
+											<button
+												type="button"
+												onClick={() => setShowHelixHelp(false)}
+												className="mt-2 w-full border border-foreground py-1 text-center text-xs uppercase tracking-[0.06em] transition-colors hover:bg-foreground hover:text-background"
+											>
+												Got it
+											</button>
+										</div>
+									)}
+								</div>
+							)}
+							{visualizationMode === "lattice" && (
+								<div className="relative">
+									<button
+										type="button"
+										onClick={() => setShowLatticeHelp((v) => !v)}
+										className={`flex h-[30px] w-[30px] items-center justify-center border-2 border-foreground text-sm font-bold transition-colors ${showLatticeHelp
+											? "bg-foreground text-background"
+											: "bg-background text-foreground hover:bg-foreground hover:text-background"
+											}`}
+									>
+										?
+									</button>
+									{showLatticeHelp && (
+										<div className="absolute right-0 top-10 z-30 w-72 border-2 border-foreground bg-background p-3 text-xs leading-relaxed">
+											<div className="mb-2 font-bold uppercase tracking-[0.08em]">
+												Reading the 3D Lattice
+											</div>
+											<div className="space-y-1.5">
+												<p>
+													<strong>X-axis</strong> (left &rarr; right) = Time
+												</p>
+												<p>
+													<strong>Y-axis</strong> (up / down) = Probability
+												</p>
+												<p>
+													<strong>Z-axis</strong> (depth) = Divergence
+												</p>
+												<div className="my-2 border-t border-foreground/20 pt-2">
+													<p>
+														<span className="text-red-500">&bull;</span> Red =
+														Market price
+													</p>
+													<p>
+														<span className="text-blue-500">&bull;</span> Blue =
+														Precognition (smart money)
+													</p>
+													<p>
+														<span className="text-green-500">&bull;</span> Green =
+														Divergence (brighter = higher confidence)
+													</p>
+												</div>
+												<p>
+													Strands <strong>spreading apart vertically</strong> means
+													growing divergence &mdash; a potential signal.
+												</p>
+												<p>
+													Both strands <strong>shifting toward you</strong> in depth
+													means precognition is more bullish than the market.
+												</p>
+											</div>
+											<button
+												type="button"
+												onClick={() => setShowLatticeHelp(false)}
+												className="mt-2 w-full border border-foreground py-1 text-center text-xs uppercase tracking-[0.06em] transition-colors hover:bg-foreground hover:text-background"
+											>
+												Got it
+											</button>
+										</div>
+									)}
+								</div>
+							)}
 						</div>
 					</div>
 				)}
 
 				{!compact && (
-					<div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-[0.08em] text-muted">
+					<div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-[0.08em]">
 						<div className="flex items-center gap-1.5">
-							<span className="h-2 w-2 rounded-full bg-foreground" />
+							<span
+								className="h-2 w-2 rounded-full bg-blue-500"
+							/>
 							Precognition Vectors
 						</div>
 						<div className="flex items-center gap-1.5">
-							<span className="h-2 w-2 rounded-full bg-foreground/60" />
+							<span
+								className="h-2 w-2 rounded-full bg-red-500"
+							/>
 							Market Vectors
 						</div>
 						<div className="flex items-center gap-1.5">
-							<span className="h-[2px] w-4 bg-foreground/70" />
+							<span
+								className="h-[2px] w-4 bg-green-500"
+							/>
 							Divergence Vectors
 						</div>
 					</div>

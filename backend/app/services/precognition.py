@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import math
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from app.db import now_utc_iso
 from app.services.beliefs import implied_yes_price, infer_wallet_belief, load_market_wallet_trades
@@ -497,6 +497,48 @@ def build_snapshots_for_all_markets(
         build_market_snapshot(conn, row["id"], snapshot_time=snapshot_time, persist=True)
         created += 1
     return {"snapshots_written": created}
+
+
+def backfill_market_snapshots(
+    conn: sqlite3.Connection,
+    n_points: int = 50,
+    include_resolved: bool = False,
+) -> dict[str, int]:
+    """Build n_points evenly-spaced historical snapshots per market from first→last trade."""
+    if include_resolved:
+        rows = conn.execute(
+            "SELECT DISTINCT market_id FROM trades"
+        ).fetchall()
+    else:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT t.market_id
+            FROM trades t
+            LEFT JOIN outcomes o ON o.market_id = t.market_id
+            WHERE o.market_id IS NULL
+            """
+        ).fetchall()
+
+    total = 0
+    for row in rows:
+        mid = row["market_id"]
+        bounds = conn.execute(
+            "SELECT MIN(ts) AS t0, MAX(ts) AS t1 FROM trades WHERE market_id = ?",
+            (mid,),
+        ).fetchone()
+        if not bounds or not bounds["t0"] or not bounds["t1"]:
+            continue
+        t0 = _parse_iso(bounds["t0"])
+        t1 = _parse_iso(bounds["t1"])
+        span = (t1 - t0).total_seconds()
+        if span < 1:
+            continue
+        for i in range(n_points):
+            frac = i / max(n_points - 1, 1)
+            snap_t = t0 + timedelta(seconds=span * frac)
+            build_market_snapshot(conn, mid, snapshot_time=snap_t, persist=True)
+            total += 1
+    return {"backfill_snapshots_written": total}
 
 
 def latest_screener_rows(

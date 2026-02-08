@@ -40,6 +40,12 @@ def main() -> None:
         help="Also build snapshots for resolved markets (off by default for fresher live views).",
     )
     parser.add_argument("--run-backtest", action="store_true")
+    parser.add_argument(
+        "--backfill-points",
+        type=int,
+        default=50,
+        help="Number of evenly-spaced historical snapshots to backfill per market (default: 50).",
+    )
     args = parser.parse_args()
 
     init_db()
@@ -68,6 +74,7 @@ def main() -> None:
                 pipeline_result = recompute_pipeline(
                     conn,
                     include_resolved_snapshots=args.include_resolved_snapshots,
+                    backfill_points=args.backfill_points,
                 )
                 print("Pipeline:", pipeline_result)
 
