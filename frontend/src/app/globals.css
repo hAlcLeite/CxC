@@ -30,3 +30,21 @@ body {
 * {
   border-radius: 0;
 }
+
+.card-header-title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1.125rem;
+  line-height: 1.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+@media (min-width: 640px) {
+  .card-header-title {
+    font-size: 0.875rem;
+    line-height: 1.25rem;
+  }
+}

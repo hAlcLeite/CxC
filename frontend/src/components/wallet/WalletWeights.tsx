@@ -20,7 +20,7 @@ export function WalletWeights({ weights }: WalletWeightsProps) {
     return (
       <Card header>
         <div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-3">
-          <CardTitle>Trust Weights</CardTitle>
+          <CardTitle className="text-xs font-medium uppercase tracking-[0.08em] sm:text-sm">Trust Weights</CardTitle>
         </div>
         <CardContent className="py-8 text-center text-muted">
           No weight data available for this wallet
@@ -32,7 +32,7 @@ export function WalletWeights({ weights }: WalletWeightsProps) {
   return (
     <Card header>
       <div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-3">
-        <CardTitle>Trust Weights</CardTitle>
+        <CardTitle className="text-xs font-medium uppercase tracking-[0.08em] sm:text-sm">Trust Weights</CardTitle>
       </div>
       <CardContent className="p-4">
         <Table>

@@ -10,7 +10,7 @@ export function SnapshotPanel({ snapshot }: SnapshotPanelProps) {
 	return (
 		<Card>
 			<div>
-				<CardTitle>Latest Snapshot</CardTitle>
+				<CardTitle className="font-bold text-3xl">Latest Snapshot</CardTitle>
 			</div>
 			<CardContent className="p-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				<div>

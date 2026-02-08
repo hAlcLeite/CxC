@@ -92,7 +92,7 @@ export default function MarketDetailPage({
 
 			<Card header>
 				<div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-4">
-					<CardTitle className="flex items-center gap-2"><PiFlowArrowLight /> Flow Summary</CardTitle>
+					<CardTitle className="card-header-title"><PiFlowArrowLight /> Flow Summary</CardTitle>
 				</div>
 				<CardContent className="p-4">
 					<div className="mt-2 flex gap-6">
