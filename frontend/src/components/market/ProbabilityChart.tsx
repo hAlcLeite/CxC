@@ -12,10 +12,14 @@ import { fetchProbabilityEmbedding } from "@/lib/api";
 import { ProbabilityLatticeScene } from "@/components/market/ProbabilityLatticeScene";
 import { format } from "date-fns";
 
+const SNAPSHOT_OPTIONS = [7, 10, 30, 50] as const;
+
 interface ProbabilityChartProps {
 	marketId: string;
 	timeSeries: TimeSeriesPoint[];
 	compact?: boolean;
+	historyPoints?: number;
+	onHistoryPointsChange?: (n: number) => void;
 }
 
 type VisualizationMode = "dna" | "lattice";
@@ -989,7 +993,7 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 	);
 }
 
-export function ProbabilityChart({ marketId, timeSeries, compact = false }: ProbabilityChartProps) {
+export function ProbabilityChart({ marketId, timeSeries, compact = false, historyPoints, onHistoryPointsChange }: ProbabilityChartProps) {
 	const [useFullScale, setUseFullScale] = useState(false);
 	const [visualizationMode, setVisualizationMode] =
 		useState<VisualizationMode>("dna");
@@ -1006,7 +1010,7 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 		const load = async () => {
 			try {
 				const result = await fetchProbabilityEmbedding(marketId, {
-					historyPoints: clamp(Math.max(timeSeries.length, 80), 10, 300),
+					historyPoints: Math.max(historyPoints ?? timeSeries.length, 10),
 					window: 5,
 				});
 				if (isCancelled) return;
@@ -1042,7 +1046,7 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 		return () => {
 			isCancelled = true;
 		};
-	}, [isMock, marketId, timeSeries.length]);
+	}, [isMock, marketId, timeSeries.length, historyPoints]);
 
 	const chartData = useMemo<DnaPoint[]>(() => {
 		if (embeddedData && embeddedData.length > 1) {
@@ -1118,27 +1122,46 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 			<CardContent className="p-4">
 				{!compact && (
 					<div className="mb-3 flex flex-wrap items-end justify-between gap-3">
-						<div className="inline-flex border-2 border-foreground p-0.5">
-							<button
-								type="button"
-								onClick={() => setVisualizationMode("dna")}
-								className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${visualizationMode === "dna"
-									? "bg-foreground text-background"
-									: "bg-background text-foreground hover:bg-foreground hover:text-background"
-									}`}
-							>
-								Probability Helix
-							</button>
-							<button
-								type="button"
-								onClick={() => setVisualizationMode("lattice")}
-								className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${visualizationMode === "lattice"
-									? "bg-foreground text-background"
-									: "bg-background text-foreground hover:bg-foreground hover:text-background"
-									}`}
-							>
-								3D Lattice
-							</button>
+						<div className="flex flex-wrap items-center gap-2">
+							<div className="inline-flex border-2 border-foreground p-0.5">
+								<button
+									type="button"
+									onClick={() => setVisualizationMode("dna")}
+									className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${visualizationMode === "dna"
+										? "bg-foreground text-background"
+										: "bg-background text-foreground hover:bg-foreground hover:text-background"
+										}`}
+								>
+									Probability Helix
+								</button>
+								<button
+									type="button"
+									onClick={() => setVisualizationMode("lattice")}
+									className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${visualizationMode === "lattice"
+										? "bg-foreground text-background"
+										: "bg-background text-foreground hover:bg-foreground hover:text-background"
+										}`}
+								>
+									3D Lattice
+								</button>
+							</div>
+							{onHistoryPointsChange && (
+								<div className="inline-flex border-2 border-foreground p-0.5">
+									{SNAPSHOT_OPTIONS.map((n) => (
+										<button
+											key={n}
+											type="button"
+											onClick={() => onHistoryPointsChange(n)}
+											className={`px-3 py-1 text-xs font-mono transition-colors ${(historyPoints ?? 50) === n
+												? "bg-foreground text-background"
+												: "bg-background text-foreground hover:bg-foreground hover:text-background"
+												}`}
+										>
+											{n}
+										</button>
+									))}
+								</div>
+							)}
 						</div>
 						<div className="flex items-center gap-2">
 							<div className="inline-flex border-2 border-foreground p-0.5">
