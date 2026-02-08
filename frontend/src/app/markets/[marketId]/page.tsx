@@ -69,7 +69,7 @@ export default function MarketDetailPage({
 									Ends: {format(new Date(market.end_time), "MMM d, yyyy")}
 								</Badge>
 							)}
-							{market.liquidity && (
+							{market.liquidity != null && market.liquidity !== 0 && (
 								<Badge variant="default">
 									Liquidity: ${market.liquidity.toLocaleString()}
 								</Badge>
