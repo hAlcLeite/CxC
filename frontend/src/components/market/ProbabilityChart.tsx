@@ -2,6 +2,9 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
+import { LineSegments2 } from "three/addons/lines/LineSegments2.js";
+import { LineSegmentsGeometry } from "three/addons/lines/LineSegmentsGeometry.js";
+import { LineMaterial } from "three/addons/lines/LineMaterial.js";
 import { Card, CardTitle, CardContent } from "@/components/ui";
 import { SiGraphite } from "react-icons/si";
 import type { TimeSeriesPoint } from "@/lib/types";
@@ -124,6 +127,8 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 			}
 			return item;
 		};
+
+		const fatLineMaterials: LineMaterial[] = [];
 
 		const dnaGroup = new THREE.Group();
 		scene.add(dnaGroup);
@@ -306,25 +311,21 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 				spineSegColors[j + 4] = cB;
 				spineSegColors[j + 5] = cB;
 			}
-			const spineGeometry = track(new THREE.BufferGeometry());
-			spineGeometry.setAttribute(
-				"position",
-				track(new THREE.BufferAttribute(spineSegPositions, 3)),
-			);
-			spineGeometry.setAttribute(
-				"color",
-				track(new THREE.BufferAttribute(spineSegColors, 3)),
-			);
-			const spineLine = new THREE.LineSegments(
-				spineGeometry,
-				track(
-					new THREE.LineBasicMaterial({
-						vertexColors: true,
-						transparent: true,
-						opacity: 1.0,
-					}),
-				),
-			);
+			const spineGeometry = new LineSegmentsGeometry();
+			disposables.push(spineGeometry as unknown as { dispose: () => void });
+			spineGeometry.setPositions(spineSegPositions);
+			spineGeometry.setColors(spineSegColors);
+			const spineLineMat = new LineMaterial({
+				worldUnits: false,
+				resolution: new THREE.Vector2(1, 1),
+			});
+			spineLineMat.vertexColors = true;
+			spineLineMat.transparent = true;
+			spineLineMat.opacity = 1.0;
+			spineLineMat.linewidth = 1.5;
+			disposables.push(spineLineMat as unknown as { dispose: () => void });
+			fatLineMaterials.push(spineLineMat);
+			const spineLine = new LineSegments2(spineGeometry, spineLineMat);
 			dnaGroup.add(spineLine);
 		}
 
@@ -591,45 +592,37 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 		precogHeads.instanceMatrix.needsUpdate = true;
 		divergenceHeads.instanceMatrix.needsUpdate = true;
 
-		const marketVectorGeometry = track(new THREE.BufferGeometry());
-		marketVectorGeometry.setAttribute(
-			"position",
-			track(new THREE.BufferAttribute(marketVectorPositions, 3)),
-		);
-		marketVectorGeometry.setAttribute(
-			"color",
-			track(new THREE.BufferAttribute(marketVectorColors, 3)),
-		);
-		const marketVectors = new THREE.LineSegments(
-			marketVectorGeometry,
-			track(
-				new THREE.LineBasicMaterial({
-					vertexColors: true,
-					transparent: true,
-					opacity: 0.85,
-				}),
-			),
-		);
+		const marketVectorGeometry = new LineSegmentsGeometry();
+		disposables.push(marketVectorGeometry as unknown as { dispose: () => void });
+		marketVectorGeometry.setPositions(marketVectorPositions);
+		marketVectorGeometry.setColors(marketVectorColors);
+		const marketVectorMat = new LineMaterial({
+			worldUnits: false,
+			resolution: new THREE.Vector2(1, 1),
+		});
+		marketVectorMat.vertexColors = true;
+		marketVectorMat.transparent = true;
+		marketVectorMat.opacity = 0.85;
+		marketVectorMat.linewidth = 1.5;
+		disposables.push(marketVectorMat as unknown as { dispose: () => void });
+		fatLineMaterials.push(marketVectorMat);
+		const marketVectors = new LineSegments2(marketVectorGeometry, marketVectorMat);
 
-		const precogVectorGeometry = track(new THREE.BufferGeometry());
-		precogVectorGeometry.setAttribute(
-			"position",
-			track(new THREE.BufferAttribute(precogVectorPositions, 3)),
-		);
-		precogVectorGeometry.setAttribute(
-			"color",
-			track(new THREE.BufferAttribute(precogVectorColors, 3)),
-		);
-		const precogVectors = new THREE.LineSegments(
-			precogVectorGeometry,
-			track(
-				new THREE.LineBasicMaterial({
-					vertexColors: true,
-					transparent: true,
-					opacity: 0.9,
-				}),
-			),
-		);
+		const precogVectorGeometry = new LineSegmentsGeometry();
+		disposables.push(precogVectorGeometry as unknown as { dispose: () => void });
+		precogVectorGeometry.setPositions(precogVectorPositions);
+		precogVectorGeometry.setColors(precogVectorColors);
+		const precogVectorMat = new LineMaterial({
+			worldUnits: false,
+			resolution: new THREE.Vector2(1, 1),
+		});
+		precogVectorMat.vertexColors = true;
+		precogVectorMat.transparent = true;
+		precogVectorMat.opacity = 0.9;
+		precogVectorMat.linewidth = 1.5;
+		disposables.push(precogVectorMat as unknown as { dispose: () => void });
+		fatLineMaterials.push(precogVectorMat);
+		const precogVectors = new LineSegments2(precogVectorGeometry, precogVectorMat);
 
 		const divergenceGeometry = track(new THREE.BufferGeometry());
 		divergenceGeometry.setAttribute(
@@ -719,6 +712,9 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 			camera.updateProjectionMatrix();
 			renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 			renderer.setSize(width, height, false);
+			for (const mat of fatLineMaterials) {
+				mat.resolution.set(width, height);
+			}
 		};
 
 		const refreshConnectorHighlight = (focusIdx: number) => {
