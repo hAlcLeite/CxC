@@ -99,6 +99,100 @@ def _edge_bucket_stats(records: list[dict]) -> list[dict]:
     return output
 
 
+def _evaluate_market_at_cutoff(
+    conn: sqlite3.Connection,
+    market_id: str,
+    end_time: datetime,
+    resolution_time: datetime,
+    outcome: int,
+    cutoff_hours: float,
+) -> dict | None:
+    """Evaluate a single market at the given cutoff. Returns a record dict or None if ineligible."""
+    cutoff_dt = min(end_time, resolution_time) - timedelta(hours=cutoff_hours)
+    if cutoff_dt > datetime.now(timezone.utc):
+        cutoff_dt = datetime.now(timezone.utc)
+
+    first_trade = conn.execute(
+        """
+        SELECT ts
+        FROM trades
+        WHERE market_id = ? AND ts <= ?
+        ORDER BY ts ASC
+        LIMIT 1
+        """,
+        (market_id, cutoff_dt.isoformat()),
+    ).fetchone()
+    if not first_trade:
+        return None
+
+    # Skip markets whose trading window is shorter than the cutoff —
+    # there isn't enough pre-cutoff data for a meaningful evaluation.
+    first_trade_dt = _parse_iso(first_trade["ts"])
+    trading_window = min(end_time, resolution_time) - first_trade_dt
+    if trading_window < timedelta(hours=cutoff_hours):
+        return None
+
+    snap = build_market_snapshot(conn, market_id, snapshot_time=cutoff_dt, persist=False)
+    return {
+        "market_id": market_id,
+        "cutoff_time": cutoff_dt.isoformat(),
+        "market_prob": float(snap["market_prob"]),
+        "precognition_prob": float(snap["precognition_prob"]),
+        "outcome": outcome,
+        "confidence": float(snap["confidence"]),
+        "divergence": float(snap["divergence"]),
+    }
+
+
+def _compute_summary(records: list[dict], cutoff_hours: float, run_id: str) -> dict:
+    """Compute aggregated backtest summary from evaluated records."""
+    if not records:
+        return {
+            "run_id": run_id,
+            "cutoff_hours": cutoff_hours,
+            "evaluated_at": now_utc_iso(),
+            "total_markets": 0,
+            "note": "No eligible resolved markets with data before cutoff.",
+        }
+
+    market_probs = [r["market_prob"] for r in records]
+    smart_probs = [r["precognition_prob"] for r in records]
+    outcomes = [r["outcome"] for r in records]
+
+    brier_market = sum((p - y) ** 2 for p, y in zip(market_probs, outcomes)) / len(records)
+    brier_smart = sum((p - y) ** 2 for p, y in zip(smart_probs, outcomes)) / len(records)
+    ll_market = sum(_log_loss(p, y) for p, y in zip(market_probs, outcomes)) / len(records)
+    ll_smart = sum(_log_loss(p, y) for p, y in zip(smart_probs, outcomes)) / len(records)
+    edge_buckets = _edge_bucket_stats(records)
+
+    top_cases = sorted(records, key=lambda r: abs(r["divergence"]), reverse=True)[:8]
+    for case in top_cases:
+        case["smart_abs_error"] = abs(case["precognition_prob"] - case["outcome"])
+        case["market_abs_error"] = abs(case["market_prob"] - case["outcome"])
+        case["winner"] = (
+            "Precognition"
+            if case["smart_abs_error"] < case["market_abs_error"]
+            else ("market" if case["smart_abs_error"] > case["market_abs_error"] else "tie")
+        )
+
+    return {
+        "run_id": run_id,
+        "cutoff_hours": cutoff_hours,
+        "evaluated_at": now_utc_iso(),
+        "total_markets": len(records),
+        "precognition_brier": brier_smart,
+        "market_brier": brier_market,
+        "brier_improvement": brier_market - brier_smart,
+        "log_loss": {"market": ll_market, "Precognition": ll_smart},
+        "calibration": {
+            "market": _calibration_bins(market_probs, outcomes),
+            "Precognition": _calibration_bins(smart_probs, outcomes),
+        },
+        "edge_buckets": edge_buckets,
+        "top_divergence_cases": top_cases,
+    }
+
+
 def run_backtest(conn: sqlite3.Connection, cutoff_hours: float = 1.0, run_id: str | None = None) -> dict:
     if run_id is None:
         run_id = uuid.uuid4().hex
@@ -119,40 +213,9 @@ def run_backtest(conn: sqlite3.Connection, cutoff_hours: float = 1.0, run_id: st
         resolution_time = _parse_iso(row["resolution_time"])
         outcome = int(row["resolved_outcome"])
 
-        cutoff_dt = min(end_time, resolution_time) - timedelta(hours=cutoff_hours)
-        if cutoff_dt > datetime.now(timezone.utc):
-            cutoff_dt = datetime.now(timezone.utc)
-
-        first_trade = conn.execute(
-            """
-            SELECT ts
-            FROM trades
-            WHERE market_id = ? AND ts <= ?
-            ORDER BY ts ASC
-            LIMIT 1
-            """,
-            (market_id, cutoff_dt.isoformat()),
-        ).fetchone()
-        if not first_trade:
+        record = _evaluate_market_at_cutoff(conn, market_id, end_time, resolution_time, outcome, cutoff_hours)
+        if record is None:
             continue
-
-        # Skip markets whose trading window is shorter than the cutoff —
-        # there isn't enough pre-cutoff data for a meaningful evaluation.
-        first_trade_dt = _parse_iso(first_trade["ts"])
-        trading_window = min(end_time, resolution_time) - first_trade_dt
-        if trading_window < timedelta(hours=cutoff_hours):
-            continue
-
-        snap = build_market_snapshot(conn, market_id, snapshot_time=cutoff_dt, persist=False)
-        record = {
-            "market_id": market_id,
-            "cutoff_time": cutoff_dt.isoformat(),
-            "market_prob": float(snap["market_prob"]),
-            "precognition_prob": float(snap["precognition_prob"]),
-            "outcome": outcome,
-            "confidence": float(snap["confidence"]),
-            "divergence": float(snap["divergence"]),
-        }
         records.append(record)
         conn.execute(
             """
@@ -178,51 +241,7 @@ def run_backtest(conn: sqlite3.Connection, cutoff_hours: float = 1.0, run_id: st
         cutoff_hours, len(markets), len(records),
     )
 
-    if not records:
-        summary = {
-            "run_id": run_id,
-            "cutoff_hours": cutoff_hours,
-            "evaluated_at": now_utc_iso(),
-            "total_markets": 0,
-            "note": "No eligible resolved markets with data before cutoff.",
-        }
-    else:
-        market_probs = [r["market_prob"] for r in records]
-        smart_probs = [r["precognition_prob"] for r in records]
-        outcomes = [r["outcome"] for r in records]
-
-        brier_market = sum((p - y) ** 2 for p, y in zip(market_probs, outcomes)) / len(records)
-        brier_smart = sum((p - y) ** 2 for p, y in zip(smart_probs, outcomes)) / len(records)
-        ll_market = sum(_log_loss(p, y) for p, y in zip(market_probs, outcomes)) / len(records)
-        ll_smart = sum(_log_loss(p, y) for p, y in zip(smart_probs, outcomes)) / len(records)
-        edge_buckets = _edge_bucket_stats(records)
-
-        top_cases = sorted(records, key=lambda r: abs(r["divergence"]), reverse=True)[:8]
-        for case in top_cases:
-            case["smart_abs_error"] = abs(case["precognition_prob"] - case["outcome"])
-            case["market_abs_error"] = abs(case["market_prob"] - case["outcome"])
-            case["winner"] = (
-                "Precognition"
-                if case["smart_abs_error"] < case["market_abs_error"]
-                else ("market" if case["smart_abs_error"] > case["market_abs_error"] else "tie")
-            )
-
-        summary = {
-            "run_id": run_id,
-            "cutoff_hours": cutoff_hours,
-            "evaluated_at": now_utc_iso(),
-            "total_markets": len(records),
-            "precognition_brier": brier_smart,
-            "market_brier": brier_market,
-            "brier_improvement": brier_market - brier_smart,
-            "log_loss": {"market": ll_market, "Precognition": ll_smart},
-            "calibration": {
-                "market": _calibration_bins(market_probs, outcomes),
-                "Precognition": _calibration_bins(smart_probs, outcomes),
-            },
-            "edge_buckets": edge_buckets,
-            "top_divergence_cases": top_cases,
-        }
+    summary = _compute_summary(records, cutoff_hours, run_id)
 
     LOGGER.info("backtest_summary: %s", json.dumps(summary, default=str))
 
@@ -237,4 +256,71 @@ def run_backtest(conn: sqlite3.Connection, cutoff_hours: float = 1.0, run_id: st
         (run_id, now_utc_iso(), json.dumps(summary)),
     )
     return summary
+
+
+def run_backtest_sweep(conn: sqlite3.Connection, max_hours: int = 168) -> dict:
+    """Run backtests at every hour from 1 to max_hours, returning lightweight summaries."""
+    sweep_run_id = uuid.uuid4().hex
+
+    # Fetch resolved markets once
+    markets = conn.execute(
+        """
+        SELECT m.id, m.end_time, o.resolution_time, o.resolved_outcome
+        FROM markets m
+        JOIN outcomes o ON o.market_id = m.id
+        """
+    ).fetchall()
+
+    # Pre-parse timestamps
+    parsed_markets = []
+    for row in markets:
+        parsed_markets.append({
+            "market_id": row["id"],
+            "end_time": _parse_iso(row["end_time"]),
+            "resolution_time": _parse_iso(row["resolution_time"]),
+            "outcome": int(row["resolved_outcome"]),
+        })
+
+    hourly_results: list[dict] = []
+
+    for cutoff_h in range(1, max_hours + 1):
+        records: list[dict] = []
+        for m in parsed_markets:
+            record = _evaluate_market_at_cutoff(
+                conn, m["market_id"], m["end_time"], m["resolution_time"], m["outcome"], float(cutoff_h)
+            )
+            if record is not None:
+                records.append(record)
+
+        if not records:
+            hourly_results.append({"cutoff_hours": cutoff_h, "total_markets": 0})
+            break
+
+        market_probs = [r["market_prob"] for r in records]
+        smart_probs = [r["precognition_prob"] for r in records]
+        outcomes = [r["outcome"] for r in records]
+
+        brier_market = sum((p - y) ** 2 for p, y in zip(market_probs, outcomes)) / len(records)
+        brier_smart = sum((p - y) ** 2 for p, y in zip(smart_probs, outcomes)) / len(records)
+        brier_improvement = brier_market - brier_smart
+        brier_improvement_pct = (brier_improvement / brier_market * 100) if brier_market > 0 else 0.0
+
+        hourly_results.append({
+            "cutoff_hours": cutoff_h,
+            "total_markets": len(records),
+            "precognition_brier": round(brier_smart, 6),
+            "market_brier": round(brier_market, 6),
+            "brier_improvement": round(brier_improvement, 6),
+            "brier_improvement_pct": round(brier_improvement_pct, 2),
+            "edge_buckets": _edge_bucket_stats(records),
+        })
+
+    return {
+        "run_id": sweep_run_id,
+        "max_hours": max_hours,
+        "evaluated_at": now_utc_iso(),
+        "total_resolved_markets": len(parsed_markets),
+        "hours_evaluated": len(hourly_results),
+        "hourly_results": hourly_results,
+    }
 

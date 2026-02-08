@@ -1,21 +1,47 @@
 "use client";
 
 import { useState } from "react";
-import { Button, Card, CardContent, Spinner } from "@/components/ui";
+import { Button, Card, CardContent, Badge, Spinner } from "@/components/ui";
 import { BacktestSummary } from "@/components/backtest/BacktestSummary";
 import { EdgeBuckets } from "@/components/backtest/EdgeBuckets";
-import { useRunBacktest } from "@/lib/hooks";
+import { BrierSweepChart } from "@/components/backtest/BrierSweepChart";
+import { ImprovementChart } from "@/components/backtest/ImprovementChart";
+import { EdgeBucketsChart } from "@/components/backtest/EdgeBucketsChart";
+import { useRunBacktest, useRunBacktestSweep } from "@/lib/hooks";
+
+type Mode = "sweep" | "single";
 
 export default function BacktestPage() {
+	const [mode, setMode] = useState<Mode>("sweep");
+
+	// Single mode state
 	const [cutoffHours, setCutoffHours] = useState(1);
 	const runBacktest = useRunBacktest();
 
-	const isValidCutoff = cutoffHours > 0 && cutoffHours <= 168 && !Number.isNaN(cutoffHours);
+	// Sweep mode state
+	const [maxHours, setMaxHours] = useState(168);
+	const runSweep = useRunBacktestSweep();
+	const [selectedSweepHour, setSelectedSweepHour] = useState(1);
+
+	const isValidCutoff =
+		cutoffHours > 0 && cutoffHours <= 168 && !Number.isNaN(cutoffHours);
+	const isValidMaxHours =
+		maxHours > 0 && maxHours <= 168 && !Number.isNaN(maxHours);
 
 	const handleRunBacktest = () => {
 		if (!isValidCutoff) return;
 		runBacktest.mutate({ cutoff_hours: cutoffHours });
 	};
+
+	const handleRunSweep = () => {
+		if (!isValidMaxHours) return;
+		setSelectedSweepHour(1);
+		runSweep.mutate({ max_hours: maxHours });
+	};
+
+	const selectedHourData = runSweep.data?.hourly_results.find(
+		(r) => r.cutoff_hours === selectedSweepHour
+	);
 
 	return (
 		<div className="space-y-6">
@@ -26,70 +52,234 @@ export default function BacktestPage() {
 				</p>
 			</div>
 
-			<Card>
-				<CardContent>
-					<div className="flex flex-wrap items-end gap-4">
-						<div>
-							<label className="block text-sm">
-								Cutoff Hours Before Resolution
-							</label>
-							<input
-								type="number"
-								value={cutoffHours}
-								onChange={(e) => setCutoffHours(Number(e.target.value))}
-								min={1}
-								max={168}
-								className="mt-3 w-24 border-2 border-foreground bg-background px-3 py-2 font-mono"
-							/>
-						</div>
-						<Button
-							onClick={handleRunBacktest}
-							disabled={runBacktest.isPending || !isValidCutoff}
-						>
-							{runBacktest.isPending ? (
-								<span className="flex items-center gap-2">
-									<Spinner size="sm" />
-									Running...
-								</span>
-							) : (
-								"Run Backtest"
-							)}
-						</Button>
-					</div>
+			{/* Mode toggle */}
+			<div className="inline-flex border-2 border-foreground p-0.5">
+				<button
+					type="button"
+					onClick={() => setMode("sweep")}
+					className={`px-3 py-1 text-xs font-mono transition-colors ${
+						mode === "sweep"
+							? "bg-foreground text-background"
+							: "bg-background text-foreground hover:bg-foreground hover:text-background"
+					}`}
+				>
+					Sweep
+				</button>
+				<button
+					type="button"
+					onClick={() => setMode("single")}
+					className={`px-3 py-1 text-xs font-mono transition-colors ${
+						mode === "single"
+							? "bg-foreground text-background"
+							: "bg-background text-foreground hover:bg-foreground hover:text-background"
+					}`}
+				>
+					Single
+				</button>
+			</div>
 
-					{runBacktest.error && (
-						<div className="mt-4 border-2 border-danger p-3 text-sm text-danger">
-							{runBacktest.error.message}
-						</div>
-					)}
-				</CardContent>
-			</Card>
-
-			{runBacktest.data && (
+			{mode === "sweep" ? (
 				<>
-					<BacktestSummary summary={runBacktest.data} />
-					{runBacktest.data.edge_buckets ? (
-						<EdgeBuckets buckets={runBacktest.data.edge_buckets} />
-					) : (
+					{/* Sweep controls */}
+					<Card>
+						<CardContent>
+							<div className="flex flex-wrap items-end gap-4">
+								<div>
+									<label className="block text-sm">
+										Max Hours
+									</label>
+									<input
+										type="number"
+										value={maxHours}
+										onChange={(e) =>
+											setMaxHours(Number(e.target.value))
+										}
+										min={1}
+										max={168}
+										className="mt-3 w-24 border-2 border-foreground bg-background px-3 py-2 font-mono"
+									/>
+								</div>
+								<Button
+									onClick={handleRunSweep}
+									disabled={
+										runSweep.isPending || !isValidMaxHours
+									}
+								>
+									{runSweep.isPending ? (
+										<span className="flex items-center gap-2">
+											<Spinner size="sm" />
+											Running Sweep...
+										</span>
+									) : (
+										"Run Sweep"
+									)}
+								</Button>
+							</div>
+
+							{runSweep.error && (
+								<div className="mt-4 border-2 border-danger p-3 text-sm text-danger">
+									{runSweep.error.message}
+								</div>
+							)}
+						</CardContent>
+					</Card>
+
+					{/* Sweep results */}
+					{runSweep.data && (
+						<>
+							{/* Summary badges */}
+							<div className="flex flex-wrap gap-2">
+								<Badge variant="default">
+									Resolved Markets:{" "}
+									{runSweep.data.total_resolved_markets}
+								</Badge>
+								<Badge variant="default">
+									Hours Evaluated:{" "}
+									{runSweep.data.hours_evaluated}
+								</Badge>
+							</div>
+
+							{/* Charts */}
+							<BrierSweepChart
+								hourlyResults={runSweep.data.hourly_results}
+							/>
+							<ImprovementChart
+								hourlyResults={runSweep.data.hourly_results}
+							/>
+
+							{/* Hour selector for edge buckets */}
+							<Card>
+								<CardContent>
+									<div className="flex flex-wrap items-end gap-4">
+										<div>
+											<label className="block text-sm">
+												Select Cutoff Hour for Edge
+												Buckets
+											</label>
+											<input
+												type="number"
+												value={selectedSweepHour}
+												onChange={(e) =>
+													setSelectedSweepHour(
+														Number(e.target.value)
+													)
+												}
+												min={1}
+												max={
+													runSweep.data
+														.hours_evaluated
+												}
+												className="mt-3 w-24 border-2 border-foreground bg-background px-3 py-2 font-mono"
+											/>
+										</div>
+									</div>
+								</CardContent>
+							</Card>
+
+							{selectedHourData?.edge_buckets && (
+								<>
+									<EdgeBucketsChart
+										buckets={selectedHourData.edge_buckets}
+										selectedHour={selectedSweepHour}
+									/>
+									<EdgeBuckets
+										buckets={selectedHourData.edge_buckets}
+									/>
+								</>
+							)}
+						</>
+					)}
+
+					{!runSweep.data && !runSweep.isPending && (
 						<Card className="border-dashed">
-							<CardContent className="py-8 text-center">
+							<CardContent className="py-12 text-center">
 								<p className="text-muted">
-									{runBacktest.data.note ?? "No edge bucket data available"}
+									Run a sweep to evaluate Precognition across
+									all cutoff hours
 								</p>
 							</CardContent>
 						</Card>
 					)}
 				</>
-			)}
+			) : (
+				<>
+					{/* Single mode - existing UI */}
+					<Card>
+						<CardContent>
+							<div className="flex flex-wrap items-end gap-4">
+								<div>
+									<label className="block text-sm">
+										Cutoff Hours Before Resolution
+									</label>
+									<input
+										type="number"
+										value={cutoffHours}
+										onChange={(e) =>
+											setCutoffHours(
+												Number(e.target.value)
+											)
+										}
+										min={1}
+										max={168}
+										className="mt-3 w-24 border-2 border-foreground bg-background px-3 py-2 font-mono"
+									/>
+								</div>
+								<Button
+									onClick={handleRunBacktest}
+									disabled={
+										runBacktest.isPending || !isValidCutoff
+									}
+								>
+									{runBacktest.isPending ? (
+										<span className="flex items-center gap-2">
+											<Spinner size="sm" />
+											Running...
+										</span>
+									) : (
+										"Run Backtest"
+									)}
+								</Button>
+							</div>
 
-			{!runBacktest.data && !runBacktest.isPending && (
-				<Card className="border-dashed">
-					<CardContent className="py-12 text-center">
-						<p className="text-muted">
-							Run a backtest to evaluate Precognition signal performance
-						</p>
-					</CardContent>
-				</Card>
+							{runBacktest.error && (
+								<div className="mt-4 border-2 border-danger p-3 text-sm text-danger">
+									{runBacktest.error.message}
+								</div>
+							)}
+						</CardContent>
+					</Card>
+
+					{runBacktest.data && (
+						<>
+							<BacktestSummary summary={runBacktest.data} />
+							{runBacktest.data.edge_buckets ? (
+								<EdgeBuckets
+									buckets={runBacktest.data.edge_buckets}
+								/>
+							) : (
+								<Card className="border-dashed">
+									<CardContent className="py-8 text-center">
+										<p className="text-muted">
+											{runBacktest.data.note ??
+												"No edge bucket data available"}
+										</p>
+									</CardContent>
+								</Card>
+							)}
+						</>
+					)}
+
+					{!runBacktest.data && !runBacktest.isPending && (
+						<Card className="border-dashed">
+							<CardContent className="py-12 text-center">
+								<p className="text-muted">
+									Run a backtest to evaluate Precognition
+									signal performance
+								</p>
+							</CardContent>
+						</Card>
+					)}
+				</>
 			)}
 		</div>
 	);
