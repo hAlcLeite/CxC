@@ -250,73 +250,145 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 		);
 		dnaGroup.add(axis);
 
-		// ---- PCA spine line ----
+		// ---- PCA spine line with curvature-based brightness (Option C) ----
 		const spinePoints = centers.length > 1 ? centers : rungMidpoints;
 		if (spinePoints.length > 1) {
-			const spinePositions = new Float32Array(spinePoints.length * 3);
-			for (let i = 0; i < spinePoints.length; i += 1) {
-				spinePositions[i * 3] = spinePoints[i].x;
-				spinePositions[i * 3 + 1] = spinePoints[i].y;
-				spinePositions[i * 3 + 2] = spinePoints[i].z;
+			// Compute per-segment curvature for brightness
+			const spineCurvatures = new Float32Array(spinePoints.length);
+			for (let i = 1; i < spinePoints.length - 1; i += 1) {
+				const prev = spinePoints[i - 1];
+				const curr = spinePoints[i];
+				const next = spinePoints[i + 1];
+				const d1x = curr.x - prev.x;
+				const d1y = curr.y - prev.y;
+				const d1z = curr.z - prev.z;
+				const d2x = next.x - curr.x;
+				const d2y = next.y - curr.y;
+				const d2z = next.z - curr.z;
+				const l1 = Math.sqrt(d1x * d1x + d1y * d1y + d1z * d1z) || 1e-6;
+				const l2 = Math.sqrt(d2x * d2x + d2y * d2y + d2z * d2z) || 1e-6;
+				const dot =
+					(d1x * d2x + d1y * d2y + d1z * d2z) / (l1 * l2);
+				spineCurvatures[i] = 1 - clamp(dot, -1, 1);
+			}
+			spineCurvatures[0] = spineCurvatures[1] || 0;
+			spineCurvatures[spinePoints.length - 1] =
+				spineCurvatures[spinePoints.length - 2] || 0;
+
+			// Normalize curvature to 0-1 range
+			let maxCurv = 0;
+			for (let i = 0; i < spineCurvatures.length; i += 1) {
+				if (spineCurvatures[i] > maxCurv) maxCurv = spineCurvatures[i];
+			}
+			const curvScale = maxCurv > 1e-6 ? 1 / maxCurv : 1;
+
+			// Build spine as line segments with per-vertex color for curvature brightness
+			const segCount = spinePoints.length - 1;
+			const spineSegPositions = new Float32Array(segCount * 2 * 3);
+			const spineSegColors = new Float32Array(segCount * 2 * 3);
+			for (let i = 0; i < segCount; i += 1) {
+				const a = spinePoints[i];
+				const b = spinePoints[i + 1];
+				const j = i * 6;
+				spineSegPositions[j] = a.x;
+				spineSegPositions[j + 1] = a.y;
+				spineSegPositions[j + 2] = a.z;
+				spineSegPositions[j + 3] = b.x;
+				spineSegPositions[j + 4] = b.y;
+				spineSegPositions[j + 5] = b.z;
+				// Brightness: base 0.45, rises to 1.0 with curvature
+				const cA = 0.45 + clamp(spineCurvatures[i] * curvScale, 0, 1) * 0.55;
+				const cB = 0.45 + clamp(spineCurvatures[i + 1] * curvScale, 0, 1) * 0.55;
+				spineSegColors[j] = cA;
+				spineSegColors[j + 1] = cA;
+				spineSegColors[j + 2] = cA;
+				spineSegColors[j + 3] = cB;
+				spineSegColors[j + 4] = cB;
+				spineSegColors[j + 5] = cB;
 			}
 			const spineGeometry = track(new THREE.BufferGeometry());
 			spineGeometry.setAttribute(
 				"position",
-				track(new THREE.BufferAttribute(spinePositions, 3)),
+				track(new THREE.BufferAttribute(spineSegPositions, 3)),
 			);
-			const spineLine = new THREE.Line(
+			spineGeometry.setAttribute(
+				"color",
+				track(new THREE.BufferAttribute(spineSegColors, 3)),
+			);
+			const spineLine = new THREE.LineSegments(
 				spineGeometry,
 				track(
 					new THREE.LineBasicMaterial({
-						color: 0xffffff,
+						vertexColors: true,
 						transparent: true,
-						opacity: 0.3,
+						opacity: 1.0,
 					}),
 				),
 			);
 			dnaGroup.add(spineLine);
 		}
 
-		// ---- Divergence rings along spine ----
-		const ringGeometry = track(new THREE.TorusGeometry(1, 0.06, 6, 32));
-		const ringMaterial = track(
-			new THREE.MeshBasicMaterial({
-				color: 0xffffff,
-				transparent: true,
-				opacity: 0.22,
-			}),
-		);
-		const ringMesh = new THREE.InstancedMesh(
-			ringGeometry,
-			ringMaterial,
-			data.length,
-		);
-		ringMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
-
-		const ringMatrix = new THREE.Matrix4();
-		const ringQuat = new THREE.Quaternion();
-		const ringScale = new THREE.Vector3();
-		const ringDir = new THREE.Vector3();
-		const ringUp = new THREE.Vector3(0, 1, 0);
-
+		// ---- Distance-from-spine bars (Option B) ----
+		// Short lines from spine center to each strand, showing how far each deviates
+		const distBarCount = data.length * 2; // one bar per strand per point
+		const distBarPositions = new Float32Array(distBarCount * 2 * 3);
+		const distBarColors = new Float32Array(distBarCount * 2 * 3);
 		for (let i = 0; i < data.length; i += 1) {
 			const sp = spinePoints[i] || rungMidpoints[i];
-			const prevSp =
-				spinePoints[Math.max(0, i - 1)] || rungMidpoints[Math.max(0, i - 1)];
-			const nextSp =
-				spinePoints[Math.min(spinePoints.length - 1, i + 1)] ||
-				rungMidpoints[Math.min(rungMidpoints.length - 1, i + 1)];
+			const mkt = marketPoints[i];
+			const pcg = precognitionPoints[i];
 
-			ringDir.subVectors(nextSp, prevSp).normalize();
-			ringQuat.setFromUnitVectors(ringUp, ringDir);
+			// Market bar (red-tinted)
+			const mj = i * 2 * 6;
+			distBarPositions[mj] = sp.x;
+			distBarPositions[mj + 1] = sp.y;
+			distBarPositions[mj + 2] = sp.z;
+			distBarPositions[mj + 3] = mkt.x;
+			distBarPositions[mj + 4] = mkt.y;
+			distBarPositions[mj + 5] = mkt.z;
+			// Spine end: dim, strand end: brighter
+			distBarColors[mj] = 0.3;
+			distBarColors[mj + 1] = 0.1;
+			distBarColors[mj + 2] = 0.1;
+			distBarColors[mj + 3] = 0.7;
+			distBarColors[mj + 4] = 0.2;
+			distBarColors[mj + 5] = 0.2;
 
-			const radius = 1.5 + Math.abs(data[i].divergence) * 0.2;
-			ringScale.setScalar(radius);
-			ringMatrix.compose(sp, ringQuat, ringScale);
-			ringMesh.setMatrixAt(i, ringMatrix);
+			// Precognition bar (blue-tinted)
+			const pj = mj + 6;
+			distBarPositions[pj] = sp.x;
+			distBarPositions[pj + 1] = sp.y;
+			distBarPositions[pj + 2] = sp.z;
+			distBarPositions[pj + 3] = pcg.x;
+			distBarPositions[pj + 4] = pcg.y;
+			distBarPositions[pj + 5] = pcg.z;
+			distBarColors[pj] = 0.1;
+			distBarColors[pj + 1] = 0.1;
+			distBarColors[pj + 2] = 0.3;
+			distBarColors[pj + 3] = 0.2;
+			distBarColors[pj + 4] = 0.2;
+			distBarColors[pj + 5] = 0.7;
 		}
-		ringMesh.instanceMatrix.needsUpdate = true;
-		dnaGroup.add(ringMesh);
+		const distBarGeometry = track(new THREE.BufferGeometry());
+		distBarGeometry.setAttribute(
+			"position",
+			track(new THREE.BufferAttribute(distBarPositions, 3)),
+		);
+		distBarGeometry.setAttribute(
+			"color",
+			track(new THREE.BufferAttribute(distBarColors, 3)),
+		);
+		const distBars = new THREE.LineSegments(
+			distBarGeometry,
+			track(
+				new THREE.LineBasicMaterial({
+					vertexColors: true,
+					transparent: true,
+					opacity: 0.28,
+				}),
+			),
+		);
+		dnaGroup.add(distBars);
 
 		const pointsGeometry = track(new THREE.SphereGeometry(0.9, 10, 10));
 		const marketPointsMesh = new THREE.InstancedMesh(
@@ -1162,7 +1234,7 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 									)}
 								</div>
 							)}
-						{visualizationMode === "lattice" && (
+							{visualizationMode === "lattice" && (
 								<div className="relative">
 									<button
 										type="button"
