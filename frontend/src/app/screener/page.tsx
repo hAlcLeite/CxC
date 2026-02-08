@@ -55,11 +55,11 @@ function CategoryDropdown({ categories, value, onChange }: CategoryDropdownProps
 		value === "all" ? "All Categories" : formatCategoryLabel(value);
 
 	return (
-		<div ref={rootRef} className="relative">
+		<div ref={rootRef} className="relative w-full sm:w-auto">
 			<button
 				type="button"
 				onClick={() => setOpen((prev) => !prev)}
-				className="flex h-10 min-w-[190px] items-center justify-between border-2 border-foreground bg-background px-3 font-mono text-sm text-foreground transition-colors hover:bg-foreground hover:text-background"
+				className="flex h-10 w-full min-w-[190px] items-center justify-between border-2 border-foreground bg-background px-3 font-mono text-sm text-foreground transition-colors hover:bg-foreground hover:text-background sm:w-auto"
 				aria-haspopup="listbox"
 				aria-expanded={open}
 			>
@@ -287,7 +287,7 @@ function ScreenerContent() {
 					value={search}
 					onChange={(e) => setSearch(e.target.value)}
 					placeholder="Search markets..."
-					className="border-2 border-foreground bg-background px-2 py-2 font-mono text-sm text-foreground placeholder:text-muted focus:outline-none"
+					className="w-full border-2 border-foreground bg-background px-2 py-2 font-mono text-sm text-foreground placeholder:text-muted focus:outline-none sm:w-64"
 				/>
 				<CategoryDropdown
 					categories={categories}
@@ -301,14 +301,20 @@ function ScreenerContent() {
 				)}
 			</div>
 
-			<ScreenerTable
-				markets={sortedMarkets}
-				sortField={sortField}
-				sortDir={sortDir}
-				onSort={handleSort}
-				watchedMarketIds={watchlistSet}
-				onToggleWatchlist={handleToggleWatchlist}
-			/>
+			<Card className="border-dashed py-8 text-center sm:hidden">
+				<p className="text-muted">Enjoy the best experience on Desktop</p>
+			</Card>
+
+			<div className="hidden sm:block">
+				<ScreenerTable
+					markets={sortedMarkets}
+					sortField={sortField}
+					sortDir={sortDir}
+					onSort={handleSort}
+					watchedMarketIds={watchlistSet}
+					onToggleWatchlist={handleToggleWatchlist}
+				/>
+			</div>
 
 			<RunPipelineModal
 				open={showPipelineModal}

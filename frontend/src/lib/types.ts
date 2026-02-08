@@ -105,13 +105,18 @@ export interface WalletMetric {
   wallet: string;
   category: string;
   horizon_bucket: string;
-  trade_count: number;
+  sample_markets: number;
+  sample_trades: number;
   brier: number;
-  calibration: number;
+  log_loss: number;
   roi: number;
-  style_contrarian: number;
-  style_early: number;
-  style_concentrated: number;
+  calibration_error: number;
+  avg_trade_size: number;
+  churn: number;
+  persistence: number;
+  specialization: number;
+  timing_edge: number;
+  updated_at: string;
 }
 
 export interface WalletWeight {
@@ -119,8 +124,9 @@ export interface WalletWeight {
   category: string;
   horizon_bucket: string;
   weight: number;
-  raw_weight: number;
-  shrunk_weight: number;
+  uncertainty: number;
+  support: number;
+  updated_at: string;
 }
 
 export interface WalletRecentTrade {

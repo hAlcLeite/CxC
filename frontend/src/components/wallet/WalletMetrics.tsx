@@ -42,11 +42,11 @@ export function WalletMetrics({ metrics }: WalletMetricsProps) {
               <TableHead>Horizon</TableHead>
               <TableHead>Trades</TableHead>
               <TableHead>Brier</TableHead>
-              <TableHead>Calibration</TableHead>
+              <TableHead>Calibration Err</TableHead>
               <TableHead>ROI</TableHead>
-              <TableHead>Contrarian</TableHead>
-              <TableHead>Early</TableHead>
-              <TableHead>Concentrated</TableHead>
+              <TableHead>Specialization</TableHead>
+              <TableHead>Persistence</TableHead>
+              <TableHead>Timing Edge</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -54,7 +54,7 @@ export function WalletMetrics({ metrics }: WalletMetricsProps) {
               <TableRow key={`${metric.category}-${metric.horizon_bucket}-${idx}`}>
                 <TableCell>{metric.category || "all"}</TableCell>
                 <TableCell>{metric.horizon_bucket}</TableCell>
-                <TableCell>{metric.trade_count}</TableCell>
+                <TableCell>{metric.sample_trades}</TableCell>
                 <TableCell
                   className={
                     metric.brier < 0.2
@@ -66,7 +66,7 @@ export function WalletMetrics({ metrics }: WalletMetricsProps) {
                 >
                   {metric.brier.toFixed(3)}
                 </TableCell>
-                <TableCell>{(metric.calibration * 100).toFixed(1)}%</TableCell>
+                <TableCell>{metric.calibration_error.toFixed(3)}</TableCell>
                 <TableCell
                   className={
                     metric.roi > 0
@@ -79,9 +79,9 @@ export function WalletMetrics({ metrics }: WalletMetricsProps) {
                   {metric.roi > 0 ? "+" : ""}
                   {(metric.roi * 100).toFixed(1)}%
                 </TableCell>
-                <TableCell>{(metric.style_contrarian * 100).toFixed(0)}%</TableCell>
-                <TableCell>{(metric.style_early * 100).toFixed(0)}%</TableCell>
-                <TableCell>{(metric.style_concentrated * 100).toFixed(0)}%</TableCell>
+                <TableCell>{(metric.specialization * 100).toFixed(0)}%</TableCell>
+                <TableCell>{(metric.persistence * 100).toFixed(0)}%</TableCell>
+                <TableCell>{metric.timing_edge.toFixed(3)}</TableCell>
               </TableRow>
             ))}
           </TableBody>

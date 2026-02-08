@@ -6,43 +6,43 @@ import { Header } from "@/components/layout/Header";
 import { Toaster } from "sonner";
 
 const inter = Inter({
-  variable: "--font-inter",
-  subsets: ["latin"],
+	variable: "--font-inter",
+	subsets: ["latin"],
 });
 
 export const metadata: Metadata = {
-  title: "Precognition",
-  description: "Wallet-weighted prediction market signals",
-  icons: {
-    icon: "/logos/precognition-logo.png",
-  },
+	title: "Prec0gnition",
+	description: "Wallet-weighted prediction market signals",
+	icons: {
+		icon: "/logos/precognition-logo.png",
+	},
 };
 
 export default function RootLayout({
-  children,
+	children,
 }: Readonly<{
-  children: React.ReactNode;
+	children: React.ReactNode;
 }>) {
-  return (
-    <html lang="en" className="dark">
-      <body className={`${inter.variable} font-sans antialiased`}>
-        <QueryProvider>
-          <Header />
-          <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
-          <Toaster
-            theme="dark"
-            position="bottom-center"
-            toastOptions={{
-              style: {
-                background: "#0a0a0a",
-                border: "2px solid #ededed",
-                borderRadius: 0,
-                color: "#ededed",
-              },
-            }}
-          />
-        </QueryProvider>
-      </body>
-    </html>
-  );
+	return (
+		<html lang="en" className="dark">
+			<body className={`${inter.variable} font-sans antialiased`}>
+				<QueryProvider>
+					<Header />
+					<main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
+					<Toaster
+						theme="dark"
+						position="bottom-center"
+						toastOptions={{
+							style: {
+								background: "#0a0a0a",
+								border: "2px solid #ededed",
+								borderRadius: 0,
+								color: "#ededed",
+							},
+						}}
+					/>
+				</QueryProvider>
+			</body>
+		</html>
+	);
 }

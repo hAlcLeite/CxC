@@ -104,7 +104,7 @@ export function ScreenerTable({
 	onToggleWatchlist,
 }: ScreenerTableProps) {
 	return (
-		<Table>
+		<Table className="min-w-[640px]">
 			<TableHeader>
 				<TableRow>
 					<SortableHeader

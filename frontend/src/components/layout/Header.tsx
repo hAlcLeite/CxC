@@ -30,37 +30,35 @@ export function Header() {
 	return (
 		<>
 			<header className="border-b-2 border-foreground bg-background">
-				<div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4">
-					<div className="flex items-center gap-8">
-						<Link href="/" className="text-xl font-bold tracking-tight">
-							Precognition
-						</Link>
+				<div className="mx-auto flex min-h-16 max-w-7xl flex-wrap items-center gap-x-8 gap-y-1 px-4 py-2">
+					<Link href="/" className="text-xl font-bold tracking-tight">
+						Precognition
+					</Link>
 
-						<nav className="flex items-center gap-1">
-							{navItems.map((item) => (
-								<Link
-									key={item.href}
-									href={item.href}
-									className={clsx(
-										"px-3 py-2 font-mono text-sm transition-colors",
-										"border-2 border-transparent",
-										pathname === item.href
-											? "border-foreground bg-foreground text-background"
-											: "hover:border-foreground"
-									)}
-								>
-									{item.label}
-									{item.label === "Alerts" && alertCount > 0 && (
-										<span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center border-2 border-danger px-1 text-xs leading-none tabular-nums text-danger">
-											{alertCount > 99 ? "99+" : alertCount}
-										</span>
-									)}
-								</Link>
-							))}
-						</nav>
-					</div>
+					<nav className="order-last flex flex-wrap items-center gap-1 sm:order-none">
+						{navItems.map((item) => (
+							<Link
+								key={item.href}
+								href={item.href}
+								className={clsx(
+									"px-3 py-2 font-mono text-sm transition-colors",
+									"border-2 border-transparent",
+									pathname === item.href
+										? "border-foreground bg-foreground text-background"
+										: "hover:border-foreground"
+								)}
+							>
+								{item.label}
+								{item.label === "Alerts" && alertCount > 0 && (
+									<span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center border-2 border-danger px-1 text-xs leading-none tabular-nums text-danger">
+										{alertCount > 99 ? "99+" : alertCount}
+									</span>
+								)}
+							</Link>
+						))}
+					</nav>
 
-					<Button size="sm" onClick={() => setShowPipelineModal(true)} className="py-2">
+					<Button size="sm" onClick={() => setShowPipelineModal(true)} className="ml-auto py-2">
 						Refresh Data
 					</Button>
 				</div>

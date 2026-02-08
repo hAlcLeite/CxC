@@ -62,14 +62,9 @@ export default function WalletDetailPage({
 				</div>
 			</div>
 
-			{data.metrics.length > 0 || data.weights.length > 0 ? (
-				<>
-					<WalletMetrics metrics={data.metrics} />
-					<WalletWeights weights={data.weights} />
-				</>
-			) : data.trade_summary ? (
-				<WalletTradeSummary summary={data.trade_summary} />
-			) : null}
+			{data.trade_summary && <WalletTradeSummary summary={data.trade_summary} />}
+			{/*	<WalletMetrics metrics={data.metrics} />
+			<WalletWeights weights={data.weights} /> BUG: data fetching not working */}
 		</div>
 	);
 }
