@@ -51,7 +51,7 @@ export function Header() {
 								>
 									{item.label}
 									{item.label === "Alerts" && alertCount > 0 && (
-										<span className="ml-2 inline-flex h-5 w-5 items-center justify-center border-2 border-danger text-xs text-danger">
+										<span className="ml-2 inline-flex h-5 min-w-5 items-center justify-center border-2 border-danger px-1 text-xs leading-none tabular-nums text-danger">
 											{alertCount > 99 ? "99+" : alertCount}
 										</span>
 									)}
