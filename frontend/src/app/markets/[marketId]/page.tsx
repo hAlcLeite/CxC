@@ -86,8 +86,19 @@ export default function MarketDetailPage({
 				divergence={latest_snapshot.divergence}
 			/>
 
-			{time_series.length > 1 && (
+			{time_series.length > 1 ? (
 				<ProbabilityChart marketId={marketId} timeSeries={time_series} />
+			) : (
+				<Card header>
+					<div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-4">
+						<h3 className="text-lg font-bold">Probability Over Time</h3>
+					</div>
+					<CardContent className="p-6">
+						<div className="flex h-[420px] items-center justify-center border-2 border-foreground/25 text-sm uppercase tracking-[0.08em] text-muted">
+							Graph loading...
+						</div>
+					</CardContent>
+				</Card>
 			)}
 
 			<TopDriversTable drivers={latest_snapshot.top_drivers} />
