@@ -40,9 +40,9 @@ export function WalletWeights({ weights }: WalletWeightsProps) {
             <TableRow>
               <TableHead>Category</TableHead>
               <TableHead>Horizon</TableHead>
-              <TableHead>Final Weight</TableHead>
-              <TableHead>Raw Weight</TableHead>
-              <TableHead>Shrunk Weight</TableHead>
+              <TableHead>Weight</TableHead>
+              <TableHead>Uncertainty</TableHead>
+              <TableHead>Support</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -53,8 +53,8 @@ export function WalletWeights({ weights }: WalletWeightsProps) {
                 <TableCell className="font-bold">
                   {(weight.weight * 100).toFixed(2)}%
                 </TableCell>
-                <TableCell>{(weight.raw_weight * 100).toFixed(2)}%</TableCell>
-                <TableCell>{(weight.shrunk_weight * 100).toFixed(2)}%</TableCell>
+                <TableCell>{weight.uncertainty.toFixed(3)}</TableCell>
+                <TableCell>{weight.support}</TableCell>
               </TableRow>
             ))}
           </TableBody>
