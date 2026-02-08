@@ -59,18 +59,18 @@ function generateMockDnaData(count = 80): DnaPoint[] {
 		market = clamp(market + drift, 0.08, 0.92);
 		precognition = clamp(
 			precognition +
-				drift * 0.6 +
-				divergencePulse * 0.42 +
-				(seededNoise(i + 173) - 0.5) * 0.008,
+			drift * 0.6 +
+			divergencePulse * 0.42 +
+			(seededNoise(i + 173) - 0.5) * 0.008,
 			0.06,
 			0.94,
 		);
 		const divergence = Math.abs(precognition - market);
 		const confidence = clamp(
 			0.38 +
-				divergence * 3.2 +
-				Math.sin(i * 0.11) * 0.14 +
-				(seededNoise(i + 251) - 0.5) * 0.06,
+			divergence * 3.2 +
+			Math.sin(i * 0.11) * 0.14 +
+			(seededNoise(i + 251) - 0.5) * 0.06,
 			0.12,
 			0.97,
 		);
@@ -793,21 +793,21 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 
 			<div className="pointer-events-none absolute inset-x-3 top-3 flex items-start justify-between gap-4">
 				<div className="border border-foreground/45 bg-background/82 px-2 py-1 text-[11px] uppercase tracking-[0.08em]">
-					Probability DNA · {sourceLabel}
+					"DNA PCA"· {sourceLabel}
 				</div>
-				<div className="border border-foreground/45 bg-background/82 px-2 py-1 font-mono text-[11px] text-muted">
+				<div className="border border-foreground/45 bg-background/82 px-2 py-1 font-mono text-[11px]">
 					Zoom {zoomPct}%
 				</div>
 			</div>
 
 			<div className="pointer-events-none absolute left-3 top-12 border border-foreground/45 bg-background/82 px-2 py-1.5 font-mono text-[11px] leading-5">
-				<div className="text-muted">Market: {active.market.toFixed(1)}%</div>
-				<div className="text-foreground">Precognition: {active.precognition.toFixed(1)}%</div>
-				<div className="text-muted">
+				<div>Market: {active.market.toFixed(1)}%</div>
+				<div>Precognition: {active.precognition.toFixed(1)}%</div>
+				<div>
 					Divergence: {active.divergence > 0 ? "+" : ""}
 					{active.divergence.toFixed(1)}%
 				</div>
-				<div className="text-muted">Confidence: {(active.confidence * 100).toFixed(0)}%</div>
+				<div>Confidence: {(active.confidence * 100).toFixed(0)}%</div>
 			</div>
 
 			<div className="pointer-events-none absolute bottom-3 left-3 right-3 flex items-center justify-between font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
@@ -816,7 +816,7 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 				<span>{data[data.length - 1]?.time}</span>
 			</div>
 
-			<div className="pointer-events-none absolute bottom-8 right-3 border border-foreground/40 bg-background/82 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-muted">
+			<div className="pointer-events-none absolute bottom-8 right-3 border border-foreground/40 bg-background/82 px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em]">
 				Drag: orbit | Wheel: zoom | Hover: inspect
 			</div>
 
@@ -825,7 +825,7 @@ function ProbabilityDnaScene({ data, yDomain, source }: ProbabilityDnaSceneProps
 				className="pointer-events-none absolute z-20 border border-foreground/55 bg-background px-2 py-1 font-mono text-[10px] uppercase tracking-[0.08em] text-foreground opacity-0 transition-opacity"
 				style={{ left: 0, top: 0 }}
 			>
-				<div className="text-muted">{active.time}</div>
+				<div className="text-white">{active.time}</div>
 				<div>Market {active.market.toFixed(1)}%</div>
 				<div>Precognition {active.precognition.toFixed(1)}%</div>
 				<div>
@@ -965,22 +965,20 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 							<button
 								type="button"
 								onClick={() => setVisualizationMode("dna")}
-								className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${
-									visualizationMode === "dna"
-										? "bg-foreground text-background"
-										: "bg-background text-foreground hover:bg-foreground hover:text-background"
-								}`}
+								className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${visualizationMode === "dna"
+									? "bg-foreground text-background"
+									: "bg-background text-foreground hover:bg-foreground hover:text-background"
+									}`}
 							>
-								Probability DNA
+								Probability Helix
 							</button>
 							<button
 								type="button"
 								onClick={() => setVisualizationMode("lattice")}
-								className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${
-									visualizationMode === "lattice"
-										? "bg-foreground text-background"
-										: "bg-background text-foreground hover:bg-foreground hover:text-background"
-								}`}
+								className={`px-3 py-1 text-xs font-mono uppercase tracking-[0.07em] transition-colors ${visualizationMode === "lattice"
+									? "bg-foreground text-background"
+									: "bg-background text-foreground hover:bg-foreground hover:text-background"
+									}`}
 							>
 								3D Lattice
 							</button>
@@ -990,24 +988,22 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 								<button
 									type="button"
 									onClick={() => setUseFullScale(false)}
-									className={`px-3 py-1 text-xs font-mono transition-colors ${
-										!useFullScale
-											? "bg-foreground text-background"
-											: "bg-background text-foreground hover:bg-foreground hover:text-background"
-									}`}
+									className={`px-3 py-1 text-xs font-mono transition-colors ${!useFullScale
+										? "bg-foreground text-background"
+										: "bg-background text-foreground hover:bg-foreground hover:text-background"
+										}`}
 								>
-									Focused
+									DATA
 								</button>
 								<button
 									type="button"
 									onClick={() => setUseFullScale(true)}
-									className={`px-3 py-1 text-xs font-mono transition-colors ${
-										useFullScale
-											? "bg-foreground text-background"
-											: "bg-background text-foreground hover:bg-foreground hover:text-background"
-									}`}
+									className={`px-3 py-1 text-xs font-mono transition-colors ${useFullScale
+										? "bg-foreground text-background"
+										: "bg-background text-foreground hover:bg-foreground hover:text-background"
+										}`}
 								>
-									Full 0-100
+									0-100%
 								</button>
 							</div>
 							{visualizationMode === "lattice" && (
@@ -1015,11 +1011,10 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 									<button
 										type="button"
 										onClick={() => setShowLatticeHelp((v) => !v)}
-										className={`flex h-[30px] w-[30px] items-center justify-center border-2 border-foreground text-sm font-bold transition-colors ${
-											showLatticeHelp
-												? "bg-foreground text-background"
-												: "bg-background text-foreground hover:bg-foreground hover:text-background"
-										}`}
+										className={`flex h-[30px] w-[30px] items-center justify-center border-2 border-foreground text-sm font-bold transition-colors ${showLatticeHelp
+											? "bg-foreground text-background"
+											: "bg-background text-foreground hover:bg-foreground hover:text-background"
+											}`}
 									>
 										?
 									</button>
@@ -1077,7 +1072,7 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 				)}
 
 				{!compact && (
-					<div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-[0.08em] text-muted">
+					<div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-[0.08em]">
 						<div className="flex items-center gap-1.5">
 							<span
 								className={`h-2 w-2 rounded-full ${visualizationMode === "lattice" ? "bg-blue-500" : "bg-foreground"}`}
