@@ -1,8 +1,8 @@
 "use client";
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchBacktest, runBacktest } from "../api";
-import type { BacktestParams } from "../types";
+import { fetchBacktest, runBacktest, runBacktestSweep } from "../api";
+import type { BacktestParams, BacktestSweepParams } from "../types";
 
 export function useBacktest(runId: string) {
   return useQuery({
@@ -20,5 +20,11 @@ export function useRunBacktest() {
     onSuccess: (data) => {
       queryClient.setQueryData(["backtest", data.run_id], data);
     },
+  });
+}
+
+export function useRunBacktestSweep() {
+  return useMutation({
+    mutationFn: (params?: BacktestSweepParams) => runBacktestSweep(params),
   });
 }

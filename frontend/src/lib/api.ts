@@ -5,11 +5,13 @@ import type {
   WalletDetailResponse,
   AlertsResponse,
   BacktestSummary,
+  BacktestSweepResponse,
   IngestParams,
   RecomputeParams,
   IngestResult,
   RecomputeResult,
   BacktestParams,
+  BacktestSweepParams,
 } from "./types";
 
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
@@ -154,6 +156,19 @@ export async function runBacktest(
     method: "POST",
     body: JSON.stringify(params || {}),
   });
+  return response.result;
+}
+
+export async function runBacktestSweep(
+  params?: BacktestSweepParams
+): Promise<BacktestSweepResponse> {
+  const response = await fetchApi<ApiResponse<BacktestSweepResponse>>(
+    "/backtest/sweep",
+    {
+      method: "POST",
+      body: JSON.stringify(params || {}),
+    }
+  );
   return response.result;
 }
 

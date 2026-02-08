@@ -228,3 +228,27 @@ export interface BacktestParams {
   cutoff_hours?: number;
   run_id?: string;
 }
+
+// Backtest sweep types
+export interface SweepHourlyResult {
+  cutoff_hours: number;
+  total_markets: number;
+  precognition_brier?: number;
+  market_brier?: number;
+  brier_improvement?: number;
+  brier_improvement_pct?: number;
+  edge_buckets?: EdgeBucket[];
+}
+
+export interface BacktestSweepResponse {
+  run_id: string;
+  max_hours: number;
+  evaluated_at: string;
+  total_resolved_markets: number;
+  hours_evaluated: number;
+  hourly_results: SweepHourlyResult[];
+}
+
+export interface BacktestSweepParams {
+  max_hours?: number;
+}

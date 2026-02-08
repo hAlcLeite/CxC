@@ -5,6 +5,7 @@ import Link from "next/link";
 import { LoadingState, Card, CardContent } from "@/components/ui";
 import { BacktestSummary } from "@/components/backtest/BacktestSummary";
 import { EdgeBuckets } from "@/components/backtest/EdgeBuckets";
+import { EdgeBucketsChart } from "@/components/backtest/EdgeBucketsChart";
 import { useBacktest } from "@/lib/hooks";
 
 export default function BacktestDetailPage({
@@ -47,7 +48,13 @@ export default function BacktestDetailPage({
 			<BacktestSummary summary={data} />
 
 			{data.edge_buckets ? (
-				<EdgeBuckets buckets={data.edge_buckets} />
+				<>
+					<EdgeBucketsChart
+						buckets={data.edge_buckets}
+						selectedHour={data.cutoff_hours}
+					/>
+					<EdgeBuckets buckets={data.edge_buckets} />
+				</>
 			) : (
 				<Card className="border-dashed">
 					<CardContent className="py-8 text-center">
