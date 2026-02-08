@@ -22,6 +22,8 @@ export default function BacktestPage() {
 	const [maxHours, setMaxHours] = useState(168);
 	const runSweep = useRunBacktestSweep();
 	const [selectedSweepHour, setSelectedSweepHour] = useState(1);
+	// Separate display state so mid-type doesn't trigger layout shifts
+	const [hourInput, setHourInput] = useState("1");
 
 	const isValidCutoff =
 		cutoffHours > 0 && cutoffHours <= 168 && !Number.isNaN(cutoffHours);
@@ -36,7 +38,25 @@ export default function BacktestPage() {
 	const handleRunSweep = () => {
 		if (!isValidMaxHours) return;
 		setSelectedSweepHour(1);
+		setHourInput("1");
 		runSweep.mutate({ max_hours: maxHours });
+	};
+
+	const commitHour = (val: string) => {
+		const n = Number(val);
+		const max = runSweep.data?.hours_evaluated ?? 168;
+		if (!Number.isNaN(n) && n >= 1 && n <= max) {
+			setSelectedSweepHour(n);
+		} else {
+			setHourInput(String(selectedSweepHour));
+		}
+	};
+
+	const stepHour = (delta: number) => {
+		const max = runSweep.data?.hours_evaluated ?? 168;
+		const next = Math.min(max, Math.max(1, selectedSweepHour + delta));
+		setSelectedSweepHour(next);
+		setHourInput(String(next));
 	};
 
 	const selectedHourData = runSweep.data?.hourly_results.find(
@@ -57,22 +77,20 @@ export default function BacktestPage() {
 				<button
 					type="button"
 					onClick={() => setMode("sweep")}
-					className={`px-3 py-1 text-xs font-mono transition-colors ${
-						mode === "sweep"
-							? "bg-foreground text-background"
-							: "bg-background text-foreground hover:bg-foreground hover:text-background"
-					}`}
+					className={`px-3 py-1 text-xs font-mono transition-colors ${mode === "sweep"
+						? "bg-foreground text-background"
+						: "bg-background text-foreground hover:bg-foreground hover:text-background"
+						}`}
 				>
 					Sweep
 				</button>
 				<button
 					type="button"
 					onClick={() => setMode("single")}
-					className={`px-3 py-1 text-xs font-mono transition-colors ${
-						mode === "single"
-							? "bg-foreground text-background"
-							: "bg-background text-foreground hover:bg-foreground hover:text-background"
-					}`}
+					className={`px-3 py-1 text-xs font-mono transition-colors ${mode === "single"
+						? "bg-foreground text-background"
+						: "bg-background text-foreground hover:bg-foreground hover:text-background"
+						}`}
 				>
 					Single
 				</button>
@@ -150,27 +168,49 @@ export default function BacktestPage() {
 							{/* Hour selector for edge buckets */}
 							<Card>
 								<CardContent>
-									<div className="flex flex-wrap items-end gap-4">
-										<div>
-											<label className="block text-sm">
-												Select Cutoff Hour for Edge
-												Buckets
-											</label>
-											<input
-												type="number"
-												value={selectedSweepHour}
-												onChange={(e) =>
-													setSelectedSweepHour(
-														Number(e.target.value)
-													)
+									<label className="block text-lg font-bold">
+										Cutoff Hour for Edge Buckets
+									</label>
+									<div className="mt-4 flex items-center gap-2">
+										<input
+											type="number"
+											value={hourInput}
+											onChange={(e) =>
+												setHourInput(e.target.value)
+											}
+											onBlur={() =>
+												commitHour(hourInput)
+											}
+											onKeyDown={(e) => {
+												if (e.key === "Enter")
+													commitHour(hourInput);
+											}}
+											min={1}
+											max={runSweep.data.hours_evaluated}
+											className="w-24 border-2 border-foreground bg-background px-3 py-2 font-mono"
+										/>
+										<div className="inline-flex border-2 border-foreground">
+											<button
+												type="button"
+												onClick={() => stepHour(-1)}
+												disabled={
+													selectedSweepHour <= 1
 												}
-												min={1}
-												max={
-													runSweep.data
-														.hours_evaluated
+												className="px-3 py-2 font-mono text-sm transition-colors hover:bg-foreground hover:text-background disabled:opacity-30"
+											>
+												−
+											</button>
+											<button
+												type="button"
+												onClick={() => stepHour(1)}
+												disabled={
+													selectedSweepHour >=
+													runSweep.data.hours_evaluated
 												}
-												className="mt-3 w-24 border-2 border-foreground bg-background px-3 py-2 font-mono"
-											/>
+												className="border-l-2 border-foreground px-3 py-2 font-mono text-sm transition-colors hover:bg-foreground hover:text-background disabled:opacity-30"
+											>
+												+
+											</button>
 										</div>
 									</div>
 								</CardContent>

@@ -117,7 +117,7 @@ export default function LandingPage() {
 						>
 							{titleText}
 						</span>
-						<h1 className={`${styles.forecastTitle} text-6xl font-bold tracking-tight`} data-text={titleText}>
+						<h1 className={`${styles.forecastTitle} text-2xl sm:text-4xl md:text-6xl font-bold tracking-tight`} data-text={titleText}>
 							{titleText}
 						</h1>
 						{tickMarks.map((tick) => (
@@ -129,21 +129,20 @@ export default function LandingPage() {
 							/>
 						))}
 					</div>
-					<p className="max-w-2xl text-base text-muted">
+					<p className="text-lg sm:text-base text-muted">
 						A wallet-weighted signal engine that spots informed flow before markets reprice.
 					</p>
-					<Link href="/dashboard">
-						<Button size="lg">Launch</Button>
-					</Link>
+					<div className="flex flex-wrap items-center gap-3">
+						<Link href="/dashboard">
+							<Button size="lg">Launch</Button>
+						</Link>
+						<Link href="#how-it-works">
+							<Button size="lg" variant="secondary">
+								How It Works
+							</Button>
+						</Link>
+					</div>
 				</div>
-				<button
-					type="button"
-					onClick={scrollToContent}
-					className={styles.scrollCue}
-					aria-label="Scroll to content"
-				>
-					<span className={styles.scrollArrow} aria-hidden="true">↓</span>
-				</button>
 			</section>
 
 			<div id="content-start" />
@@ -295,9 +294,6 @@ export default function LandingPage() {
 				<div className="flex flex-wrap gap-3">
 					<Link href="/screener">
 						<Button size="lg">Launch Demo</Button>
-					</Link>
-					<Link href="#how-it-works">
-						<Button size="lg" variant="secondary">Read the Method</Button>
 					</Link>
 				</div>
 				<p className="text-sm text-muted">Not financial advice. Research-only signal.</p>

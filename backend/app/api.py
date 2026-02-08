@@ -55,7 +55,12 @@ def create_app() -> FastAPI:
     app = FastAPI(title="Precognition Backend MVP", version="0.1.0")
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["http://localhost:3000"],
+        allow_origins=[
+            "http://localhost:3000",
+            "https://cxc-frontend1.vercel.app",
+            "https://cxc-frontend1-halcleites-projects.vercel.app",
+        ],
+        allow_origin_regex=r"https://.*\.vercel\.app",  # Allow all Vercel preview URLs
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
