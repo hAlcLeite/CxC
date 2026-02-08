@@ -10,6 +10,7 @@ import type { ScreenerMarket } from "@/lib/types";
 
 type SortField = keyof ScreenerMarket;
 type SortDir = "asc" | "desc";
+const WATCHLIST_STORAGE_KEY = "screener.watchlist.v1";
 
 function formatCategoryLabel(value: string): string {
 	return value
@@ -139,8 +140,30 @@ function ScreenerContent() {
 	const [sortDir, setSortDir] = useState<SortDir>("desc");
 	const [search, setSearch] = useState("");
 	const [categoryFilter, setCategoryFilter] = useState("all");
+	const [activeTab, setActiveTab] = useState<"all" | "watchlist">("all");
+	const [watchlistIds, setWatchlistIds] = useState<string[]>(() => {
+		if (typeof window === "undefined") return [];
+		try {
+			const raw = window.localStorage.getItem(WATCHLIST_STORAGE_KEY);
+			if (!raw) return [];
+			const parsed = JSON.parse(raw);
+			return Array.isArray(parsed)
+				? parsed.filter((id) => typeof id === "string")
+				: [];
+		} catch {
+			return [];
+		}
+	});
 
 	const markets = useMemo(() => data?.markets ?? [], [data]);
+	const watchlistSet = useMemo(() => new Set(watchlistIds), [watchlistIds]);
+
+	useEffect(() => {
+		window.localStorage.setItem(
+			WATCHLIST_STORAGE_KEY,
+			JSON.stringify(watchlistIds)
+		);
+	}, [watchlistIds]);
 
 	const categories = useMemo(
 		() => [...new Set(markets.map((m) => m.category).filter(Boolean))].sort(),
@@ -156,8 +179,11 @@ function ScreenerContent() {
 		if (categoryFilter !== "all") {
 			result = result.filter((m) => m.category === categoryFilter);
 		}
+		if (activeTab === "watchlist") {
+			result = result.filter((m) => watchlistSet.has(m.market_id));
+		}
 		return result;
-	}, [markets, search, categoryFilter]);
+	}, [markets, search, categoryFilter, activeTab, watchlistSet]);
 
 	const sortedMarkets = sortMarkets(filteredMarkets, sortField, sortDir);
 
@@ -168,6 +194,14 @@ function ScreenerContent() {
 			setSortField(field as SortField);
 			setSortDir("desc");
 		}
+	};
+
+	const handleToggleWatchlist = (marketId: string) => {
+		setWatchlistIds((prev) =>
+			prev.includes(marketId)
+				? prev.filter((id) => id !== marketId)
+				: [...prev, marketId]
+		);
 	};
 
 	if (isLoading) {
@@ -222,6 +256,31 @@ function ScreenerContent() {
 				</div>
 			</div>
 
+			<div className="inline-flex border-2 border-foreground">
+				<button
+					type="button"
+					onClick={() => setActiveTab("all")}
+					className={`px-4 py-2 text-sm font-medium uppercase tracking-[0.08em] ${
+						activeTab === "all"
+							? "bg-foreground text-background"
+							: "bg-background text-foreground hover:bg-foreground hover:text-background"
+					}`}
+				>
+					All Markets
+				</button>
+				<button
+					type="button"
+					onClick={() => setActiveTab("watchlist")}
+					className={`border-l-2 border-foreground px-4 py-2 text-sm font-medium uppercase tracking-[0.08em] ${
+						activeTab === "watchlist"
+							? "bg-foreground text-background"
+							: "bg-background text-foreground hover:bg-foreground hover:text-background"
+					}`}
+				>
+					Watchlist ({watchlistIds.length})
+				</button>
+			</div>
+
 			<div className="flex flex-wrap items-center gap-3">
 				<input
 					type="text"
@@ -247,6 +306,8 @@ function ScreenerContent() {
 				sortField={sortField}
 				sortDir={sortDir}
 				onSort={handleSort}
+				watchedMarketIds={watchlistSet}
+				onToggleWatchlist={handleToggleWatchlist}
 			/>
 
 			<RunPipelineModal
