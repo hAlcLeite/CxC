@@ -2,6 +2,7 @@ import type {
   ApiResponse,
   ScreenerResponse,
   MarketDetailResponse,
+  ProbabilityEmbeddingResponse,
   WalletDetailResponse,
   AlertsResponse,
   BacktestSummary,
@@ -61,6 +62,24 @@ export async function fetchMarket(
   const query = historyPoints ? `?history_points=${historyPoints}` : "";
   const response = await fetchApi<ApiResponse<MarketDetailResponse>>(
     `/markets/${encodeURIComponent(marketId)}${query}`
+  );
+  return response.result;
+}
+
+export async function fetchProbabilityEmbedding(
+  marketId: string,
+  params?: { historyPoints?: number; window?: number }
+): Promise<ProbabilityEmbeddingResponse> {
+  const searchParams = new URLSearchParams();
+  if (params?.historyPoints)
+    searchParams.set("history_points", String(params.historyPoints));
+  if (params?.window) searchParams.set("window", String(params.window));
+  const query = searchParams.toString();
+
+  const response = await fetchApi<ApiResponse<ProbabilityEmbeddingResponse>>(
+    `/markets/${encodeURIComponent(marketId)}/probability-embedding${
+      query ? `?${query}` : ""
+    }`
   );
   return response.result;
 }

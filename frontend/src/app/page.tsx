@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
 	Badge,
 	Button,
@@ -17,64 +17,22 @@ import {
 	TableRow,
 } from "@/components/ui";
 import { ThreeTechnologyBackground } from "@/components/background/ThreeTechnologyBackground";
+import { ProbabilityChart } from "@/components/market/ProbabilityChart";
+import type { TimeSeriesPoint } from "@/lib/types";
 import styles from "./page.module.css";
-
-type InfluenceNode = {
-	id: string;
-	label: string;
-	x: number;
-	y: number;
-	size: number;
-	community: "A" | "B" | "C";
-	centrality: number;
-};
-
-type InfluenceEdge = {
-	from: string;
-	to: string;
-	leadLag: boolean;
-};
-
-const INFLUENCE_NODES: InfluenceNode[] = [
-	{ id: "n1", label: "Sports Alpha", x: 80, y: 110, size: 11, community: "A", centrality: 0.82 },
-	{ id: "n2", label: "Macro Drift", x: 180, y: 70, size: 8, community: "B", centrality: 0.46 },
-	{ id: "n3", label: "Arb Desk 19", x: 290, y: 105, size: 12, community: "C", centrality: 0.88 },
-	{ id: "n4", label: "Value Cluster", x: 120, y: 190, size: 9, community: "A", centrality: 0.5 },
-	{ id: "n5", label: "Flow Sentinel", x: 230, y: 185, size: 10, community: "B", centrality: 0.62 },
-	{ id: "n6", label: "Narrative Fade", x: 340, y: 170, size: 7, community: "C", centrality: 0.33 },
-];
-
-const INFLUENCE_EDGES: InfluenceEdge[] = [
-	{ from: "n1", to: "n5", leadLag: true },
-	{ from: "n5", to: "n3", leadLag: false },
-	{ from: "n2", to: "n3", leadLag: true },
-	{ from: "n4", to: "n5", leadLag: false },
-	{ from: "n1", to: "n4", leadLag: false },
-	{ from: "n3", to: "n6", leadLag: true },
-	{ from: "n2", to: "n5", leadLag: false },
-];
-
-function communityStyle(community: InfluenceNode["community"]) {
-	if (community === "A") return { fill: "var(--foreground)", fillOpacity: 0.9 };
-	if (community === "B") return { fill: "var(--foreground)", fillOpacity: 0.68 };
-	return { fill: "var(--foreground)", fillOpacity: 0.46 };
-}
-
-function getNodeById(id: string) {
-	return INFLUENCE_NODES.find((node) => node.id === id);
-}
 
 export default function LandingPage() {
 	const titleText = "PRECOGNITION";
-	const [showCommunities, setShowCommunities] = useState(true);
-	const [showGlow, setShowGlow] = useState(true);
-	const [showLeadLag, setShowLeadLag] = useState(true);
-	const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
 	const [tickMarks, setTickMarks] = useState<Array<{ id: number; left: number; height: number }>>([]);
 	const [ghostOffset, setGhostOffset] = useState({ x: 0, y: 0 });
 	const ghostOffsetRef = useRef({ x: 0, y: 0 });
-	const activeNode = activeNodeId ? getNodeById(activeNodeId) : null;
-
+	const landingPreviewSeries = useMemo<TimeSeriesPoint[]>(() => [], []);
+	const scrollToContent = () => {
+		const section = document.getElementById("content-start");
+		if (section) {
+			section.scrollIntoView({ behavior: "smooth", block: "start" });
+		}
+	};
 
 	useEffect(() => {
 		const spawnTickMarks = () => {
@@ -228,133 +186,12 @@ export default function LandingPage() {
 					<div>
 						<h2 className="text-3xl font-bold">Living Influence Graph</h2>
 						<p className="mt-2">
-							NetworkX computes communities + influence; the UI renders it in real-time.
+							Interactive Probability DNA and 3D lattice preview using the current graph implementation.
 						</p>
-					</div>
-					<div className="flex flex-wrap gap-2">
-						<Button
-							size="sm"
-							variant={showCommunities ? "primary" : "secondary"}
-							onClick={() => setShowCommunities((value) => !value)}
-						>
-							Communities
-						</Button>
-						<Button
-							size="sm"
-							variant={showGlow ? "primary" : "secondary"}
-							onClick={() => setShowGlow((value) => !value)}
-						>
-							Centrality Glow
-						</Button>
-						<Button
-							size="sm"
-							variant={showLeadLag ? "primary" : "secondary"}
-							onClick={() => setShowLeadLag((value) => !value)}
-						>
-							Lead/Lag Edges
-						</Button>
 					</div>
 				</div>
 
-				<Card>
-					<CardContent className="relative p-2">
-						<svg viewBox="0 0 420 250" className="h-[280px] w-full border-2 border-foreground">
-							<rect x="0" y="0" width="420" height="250" fill="var(--background)" />
-							{INFLUENCE_EDGES.map((edge, index) => {
-								const fromNode = getNodeById(edge.from);
-								const toNode = getNodeById(edge.to);
-								if (!fromNode || !toNode) return null;
-								if (!showLeadLag && edge.leadLag) return null;
-								const isHighlighted =
-									activeNodeId === edge.from || activeNodeId === edge.to;
-								return (
-									<line
-										key={`${edge.from}-${edge.to}-${index}`}
-										x1={fromNode.x}
-										y1={fromNode.y}
-										x2={toNode.x}
-										y2={toNode.y}
-										stroke="var(--foreground)"
-										strokeWidth={isHighlighted ? 2.4 : 1.5}
-										strokeOpacity={isHighlighted ? 0.9 : 0.35}
-										strokeDasharray={edge.leadLag ? "6 4" : "0"}
-									/>
-								);
-							})}
-
-							{INFLUENCE_NODES.map((node) => {
-								const isActive = node.id === activeNodeId;
-								const nodeStyle = showCommunities
-									? communityStyle(node.community)
-									: { fill: "var(--foreground)", fillOpacity: 0.8 };
-								return (
-									<g key={node.id}>
-										{showGlow && (
-											<circle
-												cx={node.x}
-												cy={node.y}
-												r={node.size + 7}
-												fill="var(--foreground)"
-												fillOpacity={0.05 + node.centrality * 0.15}
-												className="animate-pulse"
-											/>
-										)}
-										<circle
-											cx={node.x}
-											cy={node.y}
-											r={isActive ? node.size + 1.8 : node.size}
-											stroke="var(--foreground)"
-											strokeWidth={isActive ? 3 : 2}
-											role="button"
-											tabIndex={0}
-											aria-label={`${node.label}, centrality ${(node.centrality * 100).toFixed(0)} percent`}
-											onMouseEnter={() => setActiveNodeId(node.id)}
-											onMouseLeave={() => setActiveNodeId(null)}
-											onFocus={() => setActiveNodeId(node.id)}
-											onBlur={() => setActiveNodeId(null)}
-											onKeyDown={(event) => {
-												if (event.key === "Enter" || event.key === " ") {
-													event.preventDefault();
-													setActiveNodeId(node.id);
-												}
-												if (event.key === "Escape") {
-													setActiveNodeId(null);
-												}
-											}}
-											style={nodeStyle}
-											className="cursor-pointer focus:outline-none"
-										/>
-										<text
-											x={node.x}
-											y={node.y + node.size + 16}
-											textAnchor="middle"
-											fontSize="10"
-											fill="var(--foreground)"
-											fillOpacity={0.8}
-										>
-											{node.label}
-										</text>
-									</g>
-								);
-							})}
-						</svg>
-
-						{activeNode && (
-							<div
-								className="pointer-events-none absolute border-2 border-foreground bg-background px-3 py-2 text-xs"
-								style={{
-									left: `calc(${(activeNode.x / 420) * 100}% - 34px)`,
-									top: `calc(${(activeNode.y / 250) * 100}% + 6px)`,
-								}}
-							>
-								<div className="font-bold">{activeNode.label}</div>
-								<div className="text-muted">
-									Centrality {(activeNode.centrality * 100).toFixed(0)}%
-								</div>
-							</div>
-						)}
-					</CardContent>
-				</Card>
+				<ProbabilityChart marketId="landing-preview" timeSeries={landingPreviewSeries} compact />
 			</section>
 
 
