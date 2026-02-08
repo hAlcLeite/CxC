@@ -31,7 +31,7 @@ export default function RootLayout({
           <main className="mx-auto max-w-7xl px-4 py-8">{children}</main>
           <Toaster
             theme="dark"
-            position="top-right"
+            position="bottom-center"
             toastOptions={{
               style: {
                 background: "#0a0a0a",

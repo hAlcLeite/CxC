@@ -7,90 +7,90 @@ import { EdgeBuckets } from "@/components/backtest/EdgeBuckets";
 import { useRunBacktest } from "@/lib/hooks";
 
 export default function BacktestPage() {
-  const [cutoffHours, setCutoffHours] = useState(1);
-  const runBacktest = useRunBacktest();
+	const [cutoffHours, setCutoffHours] = useState(1);
+	const runBacktest = useRunBacktest();
 
-  const isValidCutoff = cutoffHours > 0 && cutoffHours <= 168 && !Number.isNaN(cutoffHours);
+	const isValidCutoff = cutoffHours > 0 && cutoffHours <= 168 && !Number.isNaN(cutoffHours);
 
-  const handleRunBacktest = () => {
-    if (!isValidCutoff) return;
-    runBacktest.mutate({ cutoff_hours: cutoffHours });
-  };
+	const handleRunBacktest = () => {
+		if (!isValidCutoff) return;
+		runBacktest.mutate({ cutoff_hours: cutoffHours });
+	};
 
-  return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold">Backtest</h1>
-        <p className="mt-1 text-muted">
-          Evaluate Precognition signal performance against resolved markets
-        </p>
-      </div>
+	return (
+		<div className="space-y-6">
+			<div>
+				<h1 className="text-3xl font-bold">Backtest</h1>
+				<p className="mt-1">
+					Evaluate Precognition signal performance against resolved markets
+				</p>
+			</div>
 
-      <Card>
-        <CardContent>
-          <div className="flex flex-wrap items-end gap-4">
-            <div>
-              <label className="block text-sm text-muted">
-                Cutoff Hours Before Resolution
-              </label>
-              <input
-                type="number"
-                value={cutoffHours}
-                onChange={(e) => setCutoffHours(Number(e.target.value))}
-                min={1}
-                max={168}
-                className="mt-1 w-24 border-2 border-foreground bg-background px-3 py-2 font-mono"
-              />
-            </div>
-            <Button
-              onClick={handleRunBacktest}
-              disabled={runBacktest.isPending || !isValidCutoff}
-            >
-              {runBacktest.isPending ? (
-                <span className="flex items-center gap-2">
-                  <Spinner size="sm" />
-                  Running...
-                </span>
-              ) : (
-                "Run Backtest"
-              )}
-            </Button>
-          </div>
+			<Card>
+				<CardContent>
+					<div className="flex flex-wrap items-end gap-4">
+						<div>
+							<label className="block text-sm">
+								Cutoff Hours Before Resolution
+							</label>
+							<input
+								type="number"
+								value={cutoffHours}
+								onChange={(e) => setCutoffHours(Number(e.target.value))}
+								min={1}
+								max={168}
+								className="mt-3 w-24 border-2 border-foreground bg-background px-3 py-2 font-mono"
+							/>
+						</div>
+						<Button
+							onClick={handleRunBacktest}
+							disabled={runBacktest.isPending || !isValidCutoff}
+						>
+							{runBacktest.isPending ? (
+								<span className="flex items-center gap-2">
+									<Spinner size="sm" />
+									Running...
+								</span>
+							) : (
+								"Run Backtest"
+							)}
+						</Button>
+					</div>
 
-          {runBacktest.error && (
-            <div className="mt-4 border-2 border-danger p-3 text-sm text-danger">
-              {runBacktest.error.message}
-            </div>
-          )}
-        </CardContent>
-      </Card>
+					{runBacktest.error && (
+						<div className="mt-4 border-2 border-danger p-3 text-sm text-danger">
+							{runBacktest.error.message}
+						</div>
+					)}
+				</CardContent>
+			</Card>
 
-      {runBacktest.data && (
-        <>
-          <BacktestSummary summary={runBacktest.data} />
-          {runBacktest.data.edge_buckets ? (
-            <EdgeBuckets buckets={runBacktest.data.edge_buckets} />
-          ) : (
-            <Card className="border-dashed">
-              <CardContent className="py-8 text-center">
-                <p className="text-muted">
-                  {runBacktest.data.note ?? "No edge bucket data available"}
-                </p>
-              </CardContent>
-            </Card>
-          )}
-        </>
-      )}
+			{runBacktest.data && (
+				<>
+					<BacktestSummary summary={runBacktest.data} />
+					{runBacktest.data.edge_buckets ? (
+						<EdgeBuckets buckets={runBacktest.data.edge_buckets} />
+					) : (
+						<Card className="border-dashed">
+							<CardContent className="py-8 text-center">
+								<p className="text-muted">
+									{runBacktest.data.note ?? "No edge bucket data available"}
+								</p>
+							</CardContent>
+						</Card>
+					)}
+				</>
+			)}
 
-      {!runBacktest.data && !runBacktest.isPending && (
-        <Card className="border-dashed">
-          <CardContent className="py-12 text-center">
-            <p className="text-muted">
-              Run a backtest to evaluate Precognition signal performance
-            </p>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
+			{!runBacktest.data && !runBacktest.isPending && (
+				<Card className="border-dashed">
+					<CardContent className="py-12 text-center">
+						<p className="text-muted">
+							Run a backtest to evaluate Precognition signal performance
+						</p>
+					</CardContent>
+				</Card>
+			)}
+		</div>
+	);
 }

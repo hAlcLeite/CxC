@@ -114,6 +114,126 @@ def _load_jsonish_list(value: Any) -> list[Any]:
     return []
 
 
+def _load_jsonish_items(value: Any) -> list[Any]:
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return value
+    if isinstance(value, dict):
+        return [value]
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        try:
+            loaded = json.loads(raw)
+        except json.JSONDecodeError:
+            return []
+        if isinstance(loaded, list):
+            return loaded
+        if isinstance(loaded, dict):
+            return [loaded]
+    return []
+
+
+def _normalize_category_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+    normalized = " ".join(raw.replace("_", " ").replace("-", " ").split())
+    if not normalized or normalized in {"unknown", "all", "n/a", "na", "none"}:
+        return None
+    return normalized
+
+
+def _extract_category_from_tags(tags: Any) -> str | None:
+    for tag in _load_jsonish_items(tags):
+        if isinstance(tag, dict):
+            for key in ("category", "label", "name", "slug", "value"):
+                candidate = _normalize_category_value(tag.get(key))
+                if candidate:
+                    return candidate
+            continue
+        candidate = _normalize_category_value(tag)
+        if candidate:
+            return candidate
+    return None
+
+
+def _extract_market_event_ids(market: dict[str, Any]) -> list[str]:
+    event_ids: list[str] = []
+    seen: set[str] = set()
+    for event_ref in _load_jsonish_items(market.get("events")):
+        if isinstance(event_ref, dict):
+            raw_id = event_ref.get("id")
+        else:
+            raw_id = event_ref
+        event_id = str(raw_id or "").strip()
+        if event_id and event_id not in seen:
+            seen.add(event_id)
+            event_ids.append(event_id)
+
+    event_obj = market.get("event")
+    if isinstance(event_obj, dict):
+        event_id = str(event_obj.get("id") or "").strip()
+        if event_id and event_id not in seen:
+            seen.add(event_id)
+            event_ids.append(event_id)
+    elif event_obj is not None:
+        event_id = str(event_obj).strip()
+        if event_id and event_id not in seen:
+            seen.add(event_id)
+            event_ids.append(event_id)
+
+    event_id = str(market.get("eventId") or "").strip()
+    if event_id and event_id not in seen:
+        seen.add(event_id)
+        event_ids.append(event_id)
+
+    return event_ids
+
+
+def _extract_market_category(market: dict[str, Any], fallback_category: str | None = None) -> str:
+    for key in ("category", "groupCategory", "subcategory", "topic"):
+        candidate = _normalize_category_value(market.get(key))
+        if candidate:
+            return candidate
+
+    tag_category = _extract_category_from_tags(market.get("tags"))
+    if tag_category:
+        return tag_category
+
+    for event in _load_jsonish_items(market.get("events")):
+        if not isinstance(event, dict):
+            continue
+        for key in ("category", "groupCategory", "subcategory", "topic"):
+            candidate = _normalize_category_value(event.get(key))
+            if candidate:
+                return candidate
+        tag_category = _extract_category_from_tags(event.get("tags"))
+        if tag_category:
+            return tag_category
+
+    for event in _load_jsonish_items(market.get("event")):
+        if not isinstance(event, dict):
+            continue
+        for key in ("category", "groupCategory", "subcategory", "topic"):
+            candidate = _normalize_category_value(event.get(key))
+            if candidate:
+                return candidate
+        tag_category = _extract_category_from_tags(event.get("tags"))
+        if tag_category:
+            return tag_category
+
+    normalized_fallback = _normalize_category_value(fallback_category)
+    if normalized_fallback:
+        return normalized_fallback
+
+    return "unknown"
+
+
 _RETRYABLE_HTTP_CODES = {429, 502, 503}
 _MAX_RETRIES = 3
 _BASE_DELAY = 1.0  # seconds
@@ -224,6 +344,8 @@ def _fetch_markets(closed: bool, total_limit: int, page_size: int = 200) -> list
             "closed": str(closed).lower(),
             "limit": limit,
             "offset": offset,
+            "include_tag": "true",
+            "related_tags": "true",
         }
         if closed:
             params["order"] = "closedTime"
@@ -247,6 +369,8 @@ def _fetch_closed_market_page(limit: int, offset: int) -> list[dict]:
         "offset": offset,
         "order": "closedTime",
         "ascending": "false",
+        "include_tag": "true",
+        "related_tags": "true",
     }
     rows = _http_get_json(f"{GAMMA_BASE_URL}/markets", params)
     return rows if isinstance(rows, list) else []
@@ -301,6 +425,102 @@ def _fetch_recent_closed_markets(total_limit: int, page_size: int = 200) -> list
 
     rows.sort(key=_closed_market_recency_ts, reverse=True)
     return rows[:total_limit]
+
+
+def _fetch_events(closed: bool, total_limit: int, page_size: int = 200) -> list[dict]:
+    if total_limit <= 0:
+        return []
+    results: list[dict] = []
+    offset = 0
+    while len(results) < total_limit:
+        limit = min(page_size, total_limit - len(results))
+        params = {
+            "closed": str(closed).lower(),
+            "limit": limit,
+            "offset": offset,
+            "include_tag": "true",
+            "related_tags": "true",
+            "include_markets": "true",
+        }
+        rows = _http_get_json(f"{GAMMA_BASE_URL}/events", params)
+        if not isinstance(rows, list) or not rows:
+            break
+        results.extend(rows)
+        if len(rows) < limit:
+            break
+        offset += len(rows)
+    return results
+
+
+def _build_event_category_maps(
+    include_active_markets: bool,
+    include_closed_markets: bool,
+    active_markets_limit: int,
+    closed_markets_limit: int,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    category_by_condition: dict[str, str] = {}
+    category_by_market_id: dict[str, str] = {}
+    category_by_event_id: dict[str, str] = {}
+
+    try:
+        events_active = (
+            _fetch_events(closed=False, total_limit=max(active_markets_limit, 200))
+            if include_active_markets
+            else []
+        )
+        events_closed = (
+            _fetch_events(closed=True, total_limit=max(closed_markets_limit, 200))
+            if include_closed_markets
+            else []
+        )
+    except Exception as exc:
+        LOGGER.warning("event category enrichment unavailable: %s", exc)
+        return category_by_condition, category_by_market_id, category_by_event_id
+
+    for event in events_active + events_closed:
+        if not isinstance(event, dict):
+            continue
+        event_category = (
+            _normalize_category_value(event.get("category"))
+            or _normalize_category_value(event.get("groupCategory"))
+            or _normalize_category_value(event.get("subcategory"))
+            or _extract_category_from_tags(event.get("tags"))
+        )
+        if not event_category:
+            continue
+
+        event_id = str(event.get("id") or "").strip()
+        if event_id and event_id not in category_by_event_id:
+            category_by_event_id[event_id] = event_category
+
+        for market_ref in _load_jsonish_items(event.get("markets")):
+            market_id = ""
+            condition_id = ""
+            if isinstance(market_ref, dict):
+                market_id = str(
+                    market_ref.get("id")
+                    or market_ref.get("marketId")
+                    or market_ref.get("market_id")
+                    or ""
+                ).strip()
+                condition_id = str(
+                    market_ref.get("conditionId")
+                    or market_ref.get("condition_id")
+                    or ""
+                ).strip().lower()
+            else:
+                market_id = str(market_ref or "").strip()
+            if market_id and market_id not in category_by_market_id:
+                category_by_market_id[market_id] = event_category
+            if condition_id and condition_id not in category_by_condition:
+                category_by_condition[condition_id] = event_category
+
+        for market_id_ref in _load_jsonish_items(event.get("marketIds")):
+            market_id = str(market_id_ref or "").strip()
+            if market_id and market_id not in category_by_market_id:
+                category_by_market_id[market_id] = event_category
+
+    return category_by_condition, category_by_market_id, category_by_event_id
 
 
 def _infer_binary_resolution(market_row: dict, threshold: float = 0.97) -> tuple[int, str] | None:
@@ -512,6 +732,17 @@ def ingest_polymarket(
         fetched_closed = []
     fetched_markets = fetched_active + fetched_closed
 
+    (
+        category_by_condition,
+        category_by_market_id,
+        category_by_event_id,
+    ) = _build_event_category_maps(
+        include_active_markets=include_active_markets,
+        include_closed_markets=include_closed_markets,
+        active_markets_limit=active_markets_limit,
+        closed_markets_limit=closed_markets_limit,
+    )
+
     markets_payload: list[tuple] = []
     market_by_condition: dict[str, dict] = {}
     known_market_ids: set[str] = set()
@@ -521,12 +752,24 @@ def ingest_polymarket(
         end_time = _to_iso_datetime(market.get("endDate"))
         if not market_id or not condition_id or not end_time:
             continue
+        fallback_category = (
+            category_by_condition.get(condition_id)
+            or category_by_market_id.get(market_id)
+            or next(
+                (
+                    category_by_event_id[event_id]
+                    for event_id in _extract_market_event_ids(market)
+                    if event_id in category_by_event_id
+                ),
+                None,
+            )
+        )
         outcomes = [str(x).strip() for x in _load_jsonish_list(market.get("outcomes"))]
         normalized = {
             "id": market_id,
             "condition_id": condition_id,
             "question": str(market.get("question") or "").strip(),
-            "category": str(market.get("category") or "unknown").strip().lower(),
+            "category": _extract_market_category(market, fallback_category=fallback_category),
             "liquidity": _to_float(
                 market.get("liquidityNum"),
                 default=_to_float(market.get("liquidity"), default=0.0),
