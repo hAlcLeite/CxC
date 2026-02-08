@@ -25,6 +25,7 @@ from app.schemas import (
 )
 from app.services.backtest import run_backtest, run_backtest_sweep
 from app.services.beliefs import yes_direction
+from app.services.embeddings import build_probability_embedding
 from app.services.ingest import ingest_markets, ingest_outcomes, ingest_trades
 from app.services.observability import (
     fetch_recent_runs,
@@ -420,6 +421,52 @@ def create_app() -> FastAPI:
                 "time_series": [dict(row) for row in reversed(time_series)],
                 "flow_summary": {"net_yes_flow_size": net_yes_flow, "trade_count": len(trade_rows)},
                 "explanation": explanation,
+            }
+        )
+
+    @app.get("/markets/{market_id}/probability-embedding", response_model=GenericResponse)
+    def probability_embedding(
+        market_id: str,
+        history_points: int = Query(default=120, ge=10, le=1000),
+        window: int = Query(default=5, ge=2, le=30),
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> GenericResponse:
+        market = conn.execute(
+            "SELECT id, question, category FROM markets WHERE id = ?",
+            (market_id,),
+        ).fetchone()
+        if not market:
+            raise HTTPException(status_code=404, detail=f"Market not found: {market_id}")
+
+        rows = conn.execute(
+            """
+            SELECT snapshot_time, market_prob, precognition_prob, divergence, confidence
+            FROM precognition_snapshots
+            WHERE market_id = ?
+            ORDER BY snapshot_time DESC
+            LIMIT ?
+            """,
+            (market_id, history_points),
+        ).fetchall()
+        if not rows:
+            raise HTTPException(
+                status_code=404,
+                detail=f"No probability time-series found for market: {market_id}",
+            )
+
+        ordered_rows = [dict(row) for row in reversed(rows)]
+        embedded = build_probability_embedding(ordered_rows, components=3, window=window)
+
+        return GenericResponse(
+            result={
+                "market_id": market_id,
+                "question": market["question"],
+                "category": market["category"],
+                "count": len(embedded),
+                "dimensions": 3,
+                "window": window,
+                "model": "probability_pca_v1",
+                "points": embedded,
             }
         )
 
