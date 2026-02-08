@@ -36,6 +36,18 @@ from app.services.pipeline import recompute_pipeline
 from app.services.polymarket import ingest_polymarket
 from app.services.precognition import build_market_snapshot, latest_screener_rows
 from app.services.backboard import explain_divergence as generate_ai_explanation
+from app.services.snowflake import (
+    analyze_sentiment_snowflake,
+    generate_sentiment_insight,
+    get_sentiment_label,
+    check_headline_relevance,
+    _get_cache_key as get_sentiment_cache_key,
+    _get_cached_sentiment,
+    _cache_sentiment,
+    _is_rate_limited as is_sentiment_rate_limited,
+    _update_rate_limit as update_sentiment_rate_limit,
+)
+from app.services.news import extract_topic_from_question, get_news_headlines
 
 
 def create_app() -> FastAPI:
@@ -466,6 +478,149 @@ def create_app() -> FastAPI:
                 "cached": result.get("cached", False),
             }
         )
+
+    @app.get("/markets/{market_id}/sentiment", response_model=GenericResponse)
+    def get_market_sentiment(
+        market_id: str,
+        conn: sqlite3.Connection = Depends(get_conn),
+    ) -> GenericResponse:
+        """
+        Analyze public sentiment about market topic using Snowflake Cortex + Google News.
+        
+        Fetches recent news headlines, analyzes sentiment with Snowflake, and compares
+        to SmartCrowd predictions to identify divergences between public opinion and
+        informed trader behavior.
+        """
+        # Get market info
+        market = conn.execute(
+            "SELECT id, question, category, end_time, liquidity FROM markets WHERE id = ?",
+            (market_id,),
+        ).fetchone()
+        if not market:
+            raise HTTPException(status_code=404, detail=f"Market not found: {market_id}")
+
+        # Get latest snapshot for SmartCrowd probability
+        latest = conn.execute(
+            """
+            SELECT precognition_prob, market_prob, confidence
+            FROM precognition_snapshots
+            WHERE market_id = ?
+            ORDER BY snapshot_time DESC
+            LIMIT 1
+            """,
+            (market_id,),
+        ).fetchone()
+        
+        precognition_prob = float(latest["precognition_prob"]) if latest else 0.5
+        market_prob = float(latest["market_prob"]) if latest else 0.5
+
+        # Check rate limit
+        if is_sentiment_rate_limited(market_id):
+            raise HTTPException(
+                status_code=429,
+                detail="Please wait 30 seconds before requesting sentiment for this market again."
+            )
+
+        # Extract topic from market question
+        topic = extract_topic_from_question(market["question"])
+        
+        # Check cache
+        cache_key = get_sentiment_cache_key(market_id, topic)
+        cached_data = _get_cached_sentiment(cache_key)
+        if cached_data:
+            cached_data["cached"] = True
+            return GenericResponse(result=cached_data)
+
+        # Fetch news headlines (get more to filter)
+        raw_headlines = get_news_headlines(topic, limit=10, question=market["question"])
+        
+        if not raw_headlines:
+            return GenericResponse(
+                result={
+                    "market_id": market_id,
+                    "topic": topic,
+                    "headlines": [],
+                    "avg_sentiment": 0.0,
+                    "sentiment_label": "No Data",
+                    "precognition_prob": precognition_prob,
+                    "market_prob": market_prob,
+                    "insight": f"No recent news found for topic: {topic}",
+                    "cached": False,
+                    "provider": "none",
+                }
+            )
+
+        # Filter headlines by AI relevance check
+        relevant_headlines = []
+        for headline in raw_headlines:
+            if check_headline_relevance(headline["title"], market["question"]):
+                relevant_headlines.append(headline)
+                if len(relevant_headlines) >= 5:  # Cap at 5 relevant headlines
+                    break
+        
+        logger.info(f"Relevance filter: {len(relevant_headlines)}/{len(raw_headlines)} headlines kept")
+        
+        if not relevant_headlines:
+            return GenericResponse(
+                result={
+                    "market_id": market_id,
+                    "topic": topic,
+                    "headlines": [],
+                    "avg_sentiment": 0.0,
+                    "sentiment_label": "No Data",
+                    "precognition_prob": precognition_prob,
+                    "market_prob": market_prob,
+                    "insight": f"No relevant news found for this market question.",
+                    "cached": False,
+                    "provider": "none",
+                }
+            )
+
+        # Analyze sentiment for each relevant headline
+        analyzed_headlines = []
+        total_sentiment = 0.0
+        provider = "fallback"
+        
+        for headline in relevant_headlines:
+            sentiment_result = analyze_sentiment_snowflake(headline["title"])
+            analyzed_headlines.append({
+                "text": headline["title"],
+                "sentiment": sentiment_result["score"],
+                "published": headline.get("published", ""),
+                "link": headline.get("link", ""),
+            })
+            total_sentiment += sentiment_result["score"]
+            if sentiment_result.get("provider") == "snowflake":
+                provider = "snowflake"
+
+        # Calculate average sentiment
+        avg_sentiment = total_sentiment / len(analyzed_headlines) if analyzed_headlines else 0.0
+        sentiment_label = get_sentiment_label(avg_sentiment)
+        
+        # Generate insight comparing sentiment to SmartCrowd
+        insight = generate_sentiment_insight(avg_sentiment, precognition_prob, market_prob)
+
+        # Build response
+        result_data = {
+            "market_id": market_id,
+            "topic": topic,
+            "headlines": analyzed_headlines,
+            "avg_sentiment": round(avg_sentiment, 2),
+            "sentiment_label": sentiment_label,
+            "precognition_prob": precognition_prob,
+            "market_prob": market_prob,
+            "insight": insight,
+            "cached": False,
+            "provider": provider,
+        }
+        
+        # Update rate limit and cache
+        update_sentiment_rate_limit(market_id)
+        _cache_sentiment(cache_key, result_data)
+        
+        logger.info(f"Sentiment analysis for market {market_id}: {sentiment_label} ({avg_sentiment:.2f})")
+        
+        return GenericResponse(result=result_data)
 
     @app.get("/wallets/{wallet}", response_model=GenericResponse)
     def wallet_detail(wallet: str, conn: sqlite3.Connection = Depends(get_conn)) -> GenericResponse:

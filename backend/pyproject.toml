@@ -12,6 +12,8 @@ dependencies = [
   "uvicorn[standard]>=0.30,<1.0",
   "pydantic>=2.7,<3.0",
   "requests>=2.32,<3.0",
+  "feedparser>=6.0,<7.0",
+  "snowflake-connector-python>=3.6,<4.0",
 ]
 
 [tool.setuptools.packages.find]
