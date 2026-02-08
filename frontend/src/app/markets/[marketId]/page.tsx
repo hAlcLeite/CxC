@@ -86,7 +86,9 @@ export default function MarketDetailPage({
 				divergence={latest_snapshot.divergence}
 			/>
 
-			{time_series.length > 1 && <ProbabilityChart timeSeries={time_series} />}
+			{time_series.length > 1 && (
+				<ProbabilityChart marketId={marketId} timeSeries={time_series} />
+			)}
 
 			<TopDriversTable drivers={latest_snapshot.top_drivers} />
 

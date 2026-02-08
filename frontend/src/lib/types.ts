@@ -76,6 +76,30 @@ export interface MarketDetailResponse {
   explanation: string;
 }
 
+export interface ProbabilityEmbeddingPoint {
+  snapshot_time: string;
+  market_prob: number;
+  precognition_prob: number;
+  divergence: number;
+  confidence: number;
+  embedding: number[];
+  x: number;
+  y: number;
+  z: number;
+  index: number;
+}
+
+export interface ProbabilityEmbeddingResponse {
+  market_id: string;
+  question: string;
+  category: string;
+  count: number;
+  dimensions: number;
+  window: number;
+  model: string;
+  points: ProbabilityEmbeddingPoint[];
+}
+
 // Wallet types
 export interface WalletMetric {
   wallet: string;
