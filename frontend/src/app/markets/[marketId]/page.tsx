@@ -3,14 +3,14 @@
 import { use } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { LoadingState, Card, CardContent, CardTitle, Badge } from "@/components/ui";
+import { LoadingState, Card, CardContent, Badge } from "@/components/ui";
 import { SnapshotPanel } from "@/components/market/SnapshotPanel";
 import { ProbabilityChart } from "@/components/market/ProbabilityChart";
 import { TopDriversTable } from "@/components/market/TopDriversTable";
 import { DivergenceExplainer } from "@/components/market/DivergenceExplainer";
+import { FlowSummaryPanel } from "@/components/market/FlowSummaryPanel";
 import { useMarket } from "@/lib/hooks";
 import { format } from "date-fns";
-import { PiFlowArrowLight } from "react-icons/pi";
 
 export default function MarketDetailPage({
 	params,
@@ -69,7 +69,7 @@ export default function MarketDetailPage({
 									Ends: {format(new Date(market.end_time), "MMM d, yyyy")}
 								</Badge>
 							)}
-							{market.liquidity && (
+							{market.liquidity != null && market.liquidity !== 0 && (
 								<Badge variant="default">
 									Liquidity: ${market.liquidity.toLocaleString()}
 								</Badge>
@@ -90,35 +90,13 @@ export default function MarketDetailPage({
 
 			<TopDriversTable drivers={latest_snapshot.top_drivers} />
 
-			<Card header>
-				<div className="bg-foreground text-background border-b-2 border-background py-2 w-full px-4">
-					<CardTitle className="card-header-title"><PiFlowArrowLight /> Flow Summary</CardTitle>
-				</div>
-				<CardContent className="p-4">
-					<div className="mt-2 flex gap-6">
-						<div>
-							<span>Net YES Flow: </span>{" "}
-							<span
-								className={
-									flow_summary.net_yes_flow_size > 0
-										? "text-success"
-										: flow_summary.net_yes_flow_size < 0
-											? "text-danger"
-											: ""
-								}
-							>
-								{flow_summary.net_yes_flow_size > 0 ? "+" : ""}
-								{flow_summary.net_yes_flow_size.toFixed(2)}
-							</span>
-						</div>
-						<div>
-							<span>Trade Count:</span>{" "}
-							{flow_summary.trade_count}
-						</div>
-					</div>
-					<p className="mt-4 text-sm">{explanation}</p>
-				</CardContent>
-			</Card>
+			<FlowSummaryPanel
+				flowSummary={flow_summary}
+				explanation={explanation}
+				confidence={latest_snapshot.confidence}
+				disagreement={latest_snapshot.disagreement}
+				integrityRisk={latest_snapshot.integrity_risk}
+			/>
 		</div>
 	);
 }
