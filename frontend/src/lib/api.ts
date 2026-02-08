@@ -75,6 +75,37 @@ export async function explainDivergence(
   return response.result;
 }
 
+// Sentiment response type
+export interface SentimentHeadline {
+  text: string;
+  sentiment: number;
+  published: string;
+  link: string;
+}
+
+export interface SentimentResponse {
+  market_id: string;
+  topic: string;
+  headlines: SentimentHeadline[];
+  avg_sentiment: number;
+  sentiment_label: string;
+  precognition_prob: number;
+  market_prob: number;
+  insight: string;
+  cached: boolean;
+  provider: string;
+}
+
+// Fetch public sentiment analysis for a market (powered by Snowflake Cortex)
+export async function fetchMarketSentiment(
+  marketId: string
+): Promise<SentimentResponse> {
+  const response = await fetchApi<ApiResponse<SentimentResponse>>(
+    `/markets/${encodeURIComponent(marketId)}/sentiment`
+  );
+  return response.result;
+}
+
 // Wallet detail
 export async function fetchWallet(wallet: string): Promise<WalletDetailResponse> {
   const response = await fetchApi<ApiResponse<WalletDetailResponse>>(

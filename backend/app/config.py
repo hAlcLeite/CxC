@@ -13,3 +13,8 @@ DEFAULT_BACKTEST_CUTOFF_HOURS = float(os.getenv("PRECOGNITION_BACKTEST_CUTOFF_HO
 # Backboard.io API Key for AI explanations
 BACKBOARD_API_KEY = os.getenv("BACKBOARD_API_KEY", "")
 
+# Snowflake Cortex Configuration for sentiment analysis
+SNOWFLAKE_ACCOUNT = os.getenv("SNOWFLAKE_ACCOUNT", "")
+SNOWFLAKE_USER = os.getenv("SNOWFLAKE_USER", "")
+SNOWFLAKE_PASSWORD = os.getenv("SNOWFLAKE_PASSWORD", "")
+

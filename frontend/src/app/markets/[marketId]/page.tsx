@@ -8,6 +8,7 @@ import { SnapshotPanel } from "@/components/market/SnapshotPanel";
 import { ProbabilityChart } from "@/components/market/ProbabilityChart";
 import { TopDriversTable } from "@/components/market/TopDriversTable";
 import { DivergenceExplainer } from "@/components/market/DivergenceExplainer";
+import { SentimentCard } from "@/components/market/SentimentCard";
 import { useMarket } from "@/lib/hooks";
 import { format } from "date-fns";
 import { PiFlowArrowLight } from "react-icons/pi";
@@ -85,6 +86,8 @@ export default function MarketDetailPage({
 				marketId={marketId}
 				divergence={latest_snapshot.divergence}
 			/>
+
+			<SentimentCard marketId={marketId} />
 
 			{time_series.length > 1 && <ProbabilityChart timeSeries={time_series} />}
 
