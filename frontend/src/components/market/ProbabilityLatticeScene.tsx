@@ -182,7 +182,7 @@ export function ProbabilityLatticeScene({
 		);
 
 		// Axis label sprites
-		const makeLabel = (text: string): THREE.Sprite => {
+		const makeLabel = (text: string) => {
 			const canvas = document.createElement("canvas");
 			canvas.width = 256;
 			canvas.height = 64;

@@ -844,6 +844,7 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 		useState<VisualizationMode>("dna");
 	const [embeddedData, setEmbeddedData] = useState<DnaPoint[] | null>(null);
 	const [embeddingFailed, setEmbeddingFailed] = useState(false);
+	const [showLatticeHelp, setShowLatticeHelp] = useState(false);
 	const isMock = timeSeries.length < 2;
 
 	useEffect(() => {
@@ -984,29 +985,93 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 								3D Lattice
 							</button>
 						</div>
-						<div className="inline-flex border-2 border-foreground p-0.5">
-							<button
-								type="button"
-								onClick={() => setUseFullScale(false)}
-								className={`px-3 py-1 text-xs font-mono transition-colors ${
-									!useFullScale
-										? "bg-foreground text-background"
-										: "bg-background text-foreground hover:bg-foreground hover:text-background"
-								}`}
-							>
-								Focused
-							</button>
-							<button
-								type="button"
-								onClick={() => setUseFullScale(true)}
-								className={`px-3 py-1 text-xs font-mono transition-colors ${
-									useFullScale
-										? "bg-foreground text-background"
-										: "bg-background text-foreground hover:bg-foreground hover:text-background"
-								}`}
-							>
-								Full 0-100
-							</button>
+						<div className="flex items-center gap-2">
+							<div className="inline-flex border-2 border-foreground p-0.5">
+								<button
+									type="button"
+									onClick={() => setUseFullScale(false)}
+									className={`px-3 py-1 text-xs font-mono transition-colors ${
+										!useFullScale
+											? "bg-foreground text-background"
+											: "bg-background text-foreground hover:bg-foreground hover:text-background"
+									}`}
+								>
+									Focused
+								</button>
+								<button
+									type="button"
+									onClick={() => setUseFullScale(true)}
+									className={`px-3 py-1 text-xs font-mono transition-colors ${
+										useFullScale
+											? "bg-foreground text-background"
+											: "bg-background text-foreground hover:bg-foreground hover:text-background"
+									}`}
+								>
+									Full 0-100
+								</button>
+							</div>
+							{visualizationMode === "lattice" && (
+								<div className="relative">
+									<button
+										type="button"
+										onClick={() => setShowLatticeHelp((v) => !v)}
+										className={`flex h-[30px] w-[30px] items-center justify-center border-2 border-foreground text-sm font-bold transition-colors ${
+											showLatticeHelp
+												? "bg-foreground text-background"
+												: "bg-background text-foreground hover:bg-foreground hover:text-background"
+										}`}
+									>
+										?
+									</button>
+									{showLatticeHelp && (
+										<div className="absolute right-0 top-10 z-30 w-72 border-2 border-foreground bg-background p-3 text-xs leading-relaxed">
+											<div className="mb-2 font-bold uppercase tracking-[0.08em]">
+												Reading the 3D Lattice
+											</div>
+											<div className="space-y-1.5">
+												<p>
+													<strong>X-axis</strong> (left &rarr; right) = Time
+												</p>
+												<p>
+													<strong>Y-axis</strong> (up / down) = Probability
+												</p>
+												<p>
+													<strong>Z-axis</strong> (depth) = Divergence
+												</p>
+												<div className="my-2 border-t border-foreground/20 pt-2">
+													<p>
+														<span className="text-red-500">&bull;</span> Red =
+														Market price
+													</p>
+													<p>
+														<span className="text-blue-500">&bull;</span> Blue =
+														Precognition (smart money)
+													</p>
+													<p>
+														<span className="text-green-500">&bull;</span> Green =
+														Divergence (brighter = higher confidence)
+													</p>
+												</div>
+												<p>
+													Strands <strong>spreading apart vertically</strong> means
+													growing divergence &mdash; a potential signal.
+												</p>
+												<p>
+													Both strands <strong>shifting toward you</strong> in depth
+													means precognition is more bullish than the market.
+												</p>
+											</div>
+											<button
+												type="button"
+												onClick={() => setShowLatticeHelp(false)}
+												className="mt-2 w-full border border-foreground py-1 text-center text-xs uppercase tracking-[0.06em] transition-colors hover:bg-foreground hover:text-background"
+											>
+												Got it
+											</button>
+										</div>
+									)}
+								</div>
+							)}
 						</div>
 					</div>
 				)}
@@ -1014,15 +1079,21 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 				{!compact && (
 					<div className="mb-3 flex flex-wrap items-center gap-3 text-[11px] uppercase tracking-[0.08em] text-muted">
 						<div className="flex items-center gap-1.5">
-							<span className="h-2 w-2 rounded-full bg-foreground" />
+							<span
+								className={`h-2 w-2 rounded-full ${visualizationMode === "lattice" ? "bg-blue-500" : "bg-foreground"}`}
+							/>
 							Precognition Vectors
 						</div>
 						<div className="flex items-center gap-1.5">
-							<span className="h-2 w-2 rounded-full bg-foreground/60" />
+							<span
+								className={`h-2 w-2 rounded-full ${visualizationMode === "lattice" ? "bg-red-500" : "bg-foreground/60"}`}
+							/>
 							Market Vectors
 						</div>
 						<div className="flex items-center gap-1.5">
-							<span className="h-[2px] w-4 bg-foreground/70" />
+							<span
+								className={`h-[2px] w-4 ${visualizationMode === "lattice" ? "bg-green-500" : "bg-foreground/70"}`}
+							/>
 							Divergence Vectors
 						</div>
 					</div>
