@@ -16,6 +16,12 @@ type PipelineMode = "quick" | "full";
 export function RunPipelineModal({ open, onClose }: RunPipelineModalProps) {
 	const [mode, setMode] = useState<PipelineMode>("quick");
 	const [result, setResult] = useState<IngestResult | null>(null);
+	const [includeActive, setIncludeActive] = useState(true);
+	const [includeClosed, setIncludeClosed] = useState(true);
+	const [activeLimit, setActiveLimit] = useState(20);
+	const [closedLimit, setClosedLimit] = useState(20);
+	const [tradesPerMarket, setTradesPerMarket] = useState(500);
+	const [chunkSize, setChunkSize] = useState(1);
 	const ingestMutation = useIngestMutation();
 	const recomputeMutation = useRecomputeMutation();
 
@@ -31,12 +37,12 @@ export function RunPipelineModal({ open, onClose }: RunPipelineModalProps) {
 			} else {
 				const res = await ingestMutation.mutateAsync({
 					params: {
-						include_active_markets: true,
-						include_closed_markets: true,
-						active_markets_limit: 20,
-						closed_markets_limit: 20,
-						trades_per_market: 500,
-						market_chunk_size: 1,
+						include_active_markets: includeActive,
+						include_closed_markets: includeClosed,
+						active_markets_limit: activeLimit,
+						closed_markets_limit: closedLimit,
+						trades_per_market: tradesPerMarket,
+						market_chunk_size: chunkSize,
 					},
 					runRecompute: true,
 				});
@@ -128,6 +134,74 @@ export function RunPipelineModal({ open, onClose }: RunPipelineModalProps) {
 									Fetch new trades from Polymarket and recompute all metrics
 								</div>
 							</button>
+
+							{mode === "full" && (
+								<div className="space-y-3 border-2 border-foreground p-4">
+									<div className="text-xs font-bold uppercase tracking-[0.08em]">Ingest Parameters</div>
+									<div className="flex gap-4">
+										<label className="flex items-center gap-2 text-sm">
+											<input
+												type="checkbox"
+												checked={includeActive}
+												onChange={(e) => setIncludeActive(e.target.checked)}
+												className="h-4 w-4 accent-foreground"
+											/>
+											Active Markets
+										</label>
+										<label className="flex items-center gap-2 text-sm">
+											<input
+												type="checkbox"
+												checked={includeClosed}
+												onChange={(e) => setIncludeClosed(e.target.checked)}
+												className="h-4 w-4 accent-foreground"
+											/>
+											Closed Markets
+										</label>
+									</div>
+									<div className="grid grid-cols-2 gap-3">
+										<label className="space-y-1">
+											<span className="text-xs">Active Limit</span>
+											<input
+												type="number"
+												value={activeLimit}
+												onChange={(e) => setActiveLimit(Number(e.target.value))}
+												min={1}
+												className="w-full border-2 border-foreground bg-background px-2 py-1 font-mono text-sm text-foreground focus:outline-none"
+											/>
+										</label>
+										<label className="space-y-1">
+											<span className="text-xs">Closed Limit</span>
+											<input
+												type="number"
+												value={closedLimit}
+												onChange={(e) => setClosedLimit(Number(e.target.value))}
+												min={1}
+												className="w-full border-2 border-foreground bg-background px-2 py-1 font-mono text-sm text-foreground focus:outline-none"
+											/>
+										</label>
+										<label className="space-y-1">
+											<span className="text-xs">Trades / Market</span>
+											<input
+												type="number"
+												value={tradesPerMarket}
+												onChange={(e) => setTradesPerMarket(Number(e.target.value))}
+												min={1}
+												className="w-full border-2 border-foreground bg-background px-2 py-1 font-mono text-sm text-foreground focus:outline-none"
+											/>
+										</label>
+										<label className="space-y-1">
+											<span className="text-xs">Chunk Size</span>
+											<input
+												type="number"
+												value={chunkSize}
+												onChange={(e) => setChunkSize(Number(e.target.value))}
+												min={1}
+												className="w-full border-2 border-foreground bg-background px-2 py-1 font-mono text-sm text-foreground focus:outline-none"
+											/>
+										</label>
+									</div>
+								</div>
+							)}
 						</div>
 
 						{error && (
