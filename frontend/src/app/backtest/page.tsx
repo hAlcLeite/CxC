@@ -216,7 +216,7 @@ export default function BacktestPage() {
 								</CardContent>
 							</Card>
 
-							{selectedHourData?.edge_buckets && (
+							{selectedHourData?.edge_buckets ? (
 								<>
 									<EdgeBucketsChart
 										buckets={selectedHourData.edge_buckets}
@@ -226,6 +226,14 @@ export default function BacktestPage() {
 										buckets={selectedHourData.edge_buckets}
 									/>
 								</>
+							) : (
+								<Card className="border-dashed">
+									<CardContent className="py-12 text-center">
+										<p className="text-muted">
+											Maximum cutoff hours reached
+										</p>
+									</CardContent>
+								</Card>
 							)}
 						</>
 					)}
