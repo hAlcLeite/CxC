@@ -205,7 +205,11 @@ def create_app() -> FastAPI:
                 )
                 pipeline_result: dict[str, int] | None = None
                 if run_recompute:
-                    pipeline_result = recompute_pipeline(conn, include_resolved_snapshots=False)
+                    pipeline_result = recompute_pipeline(
+                        conn,
+                        include_resolved_snapshots=False,
+                        backfill_points=req.backfill_points,
+                    )
             duration_ms = (time.perf_counter() - started) * 1000.0
             with conn:
                 finish_pipeline_run(
@@ -256,6 +260,7 @@ def create_app() -> FastAPI:
                     conn,
                     snapshot_time=req.snapshot_time,
                     include_resolved_snapshots=req.include_resolved_snapshots,
+                    backfill_points=req.backfill_points,
                 )
             duration_ms = (time.perf_counter() - started) * 1000.0
             with conn:

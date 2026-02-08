@@ -28,11 +28,13 @@ class PolymarketIngestRequest(BaseModel):
     prefer_recent_closed_markets: bool = True
     reset_checkpoint: bool = False
     request_delay_ms: int = Field(default=250, ge=0, le=5000)
+    backfill_points: int = Field(default=50, ge=0, le=500)
 
 
 class RecomputeRequest(BaseModel):
     snapshot_time: datetime | None = None
     include_resolved_snapshots: bool = False
+    backfill_points: int = Field(default=50, ge=0, le=500)
 
 
 class BacktestRequest(BaseModel):

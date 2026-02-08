@@ -24,6 +24,10 @@ export default function MarketDetailPage({
 	const backLabel = from === "alerts" ? "Back to Alerts" : "Back to Screener";
 	const { data, isLoading, error } = useMarket(marketId);
 
+	if (data) {
+		console.log("[useMarket] time_series.length =", data.time_series?.length, data.time_series);
+	}
+
 	if (isLoading) {
 		return <LoadingState message="Loading market data..." />;
 	}

@@ -1011,10 +1011,12 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 				});
 				if (isCancelled) return;
 				if (!result.points || result.points.length < 2) {
+					console.log("[ProbabilityChart] embedding returned insufficient points:", result.points?.length ?? 0);
 					setEmbeddingFailed(true);
 					setEmbeddedData(null);
 					return;
 				}
+				console.log("[ProbabilityChart] embedding points.length =", result.points.length);
 				setEmbeddedData(
 					result.points.map((point) => ({
 						time: format(new Date(point.snapshot_time), "MMM d HH:mm"),
@@ -1044,11 +1046,14 @@ export function ProbabilityChart({ marketId, timeSeries, compact = false }: Prob
 
 	const chartData = useMemo<DnaPoint[]>(() => {
 		if (embeddedData && embeddedData.length > 1) {
+			console.log("[ProbabilityChart] chartData source=embedding, length =", embeddedData.length);
 			return embeddedData;
 		}
 		if (isMock) {
+			console.log("[ProbabilityChart] chartData source=mock (timeSeries.length < 2)");
 			return generateMockDnaData(80);
 		}
+		console.log("[ProbabilityChart] chartData source=timeseries, length =", timeSeries.length);
 		return timeSeries.map((point) => ({
 			time: format(new Date(point.snapshot_time), "MMM d HH:mm"),
 			market: point.market_prob * 100,
