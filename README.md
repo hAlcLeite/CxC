@@ -1,20 +1,20 @@
 # Prec0gnition
 
-Precognition is a wallet-weighted prediction market signal platform. It ingests trade-level data from Polymarket, profiles every wallet's historical accuracy, infers current beliefs from trade sequences, and publishes a manipulation-aware **SmartCrowd Probability**: what calibrated traders actually think will happen that is separated from the raw market price. This project uses NextJS for frontend, FastAPI for backend and SQLite for fast lightweight storage.
+Precognition is a wallet-weighted prediction market signal platform. It ingests trade-level data from Polymarket, profiles wallet behavior, infers current beliefs from trade sequences, and publishes a manipulation-aware probability that is meant to separate trusted cohort conviction from raw market price. The stack is Next.js on the frontend, FastAPI on the backend, and SQLite for lightweight local storage.
 
 ## Frontend
 
-Requirements: pnpm
+Requirements: `pnpm`
 
 ```bash
 cd frontend && pnpm install && pnpm dev
 ```
 
-Visit `localhost:3000` to view the dashboard.
+Visit `http://localhost:3000`.
 
 ## Backend
 
-Wallet-weighted Precognition backend lives in `backend/`.
+The backend lives in `backend/`.
 
 Quick run:
 
@@ -27,57 +27,59 @@ python scripts/seed_demo_data.py --load
 uvicorn app.main:app --reload --port 8000
 ```
 
-API docs available at `http://localhost:8000/docs`.
+API docs are available at `http://localhost:8000/docs`.
 
-### Data Ingestion Setup
+### Data Ingestion
 
-Due to the pagination nature of the Polymarket API, the pipeline has two ingestion modes: **demo CSV** and **live Polymarket API**.
+The backend supports both demo CSV ingestion and live Polymarket API ingestion.
 
-#### Demo data (offline)
-
-Seeds the database with synthetic markets, trades, and resolved outcomes for local development:
+#### Demo data
 
 ```bash
 python scripts/seed_demo_data.py --load
-```
-
-Then run the pipeline to compute wallet metrics, trust weights, and precognition snapshots:
-
-```bash
-# POST to the running server
 curl -X POST http://localhost:8000/pipeline/recompute
 ```
 
 #### Live Polymarket data
 
-Fetches real market and trade data directly from the Polymarket API. Stop the server first (SQLite allows only one writer at a time):
+Run the live loader directly:
 
 ```bash
-python scripts/load_polymarket.py           # ingest only
-python scripts/load_polymarket.py --run-backtest   # ingest + run backtest sweep
+python scripts/load_polymarket.py
+python scripts/load_polymarket.py --run-backtest
 ```
 
-Or trigger incrementally via the API while the server is running:
+Or run the scheduled sync worker:
 
 ```bash
-POST http://localhost:8000/ingest/polymarket
+python scripts/sync_runner.py --interval-seconds 300
 ```
 
-Or trigger a full ingestion via the running web UI to refresh live data in the SQLite DB to work with.
+Key backend ingestion behavior on this branch:
 
-#### Pipeline stages
+- Only binary markets are ingested. Multi-outcome markets are skipped so YES/NO analytics are not polluted by incompatible books.
+- Incremental trade checkpoints are stored in SQLite, but newly seen markets still get a full-history backfill automatically.
+- Live ingest defaults to `backfill_points=0`, so historical snapshot reconstruction only runs when explicitly requested.
+- Post-ingest recompute is targeted: only markets with new trades get fresh snapshots, and wallet analytics rerun only when newly inserted trades affect resolved-market evaluation.
 
-Each recompute runs four stages in order:
+If you are updating an older local database to this version of the pipeline, run one repair pass after pulling:
 
-1. **`compute_wallet_metrics`**: Scores every wallet on Brier, log loss, calibration error, churn, persistence, timing edge, ROI, and specialization. Metrics are sliced by market category and prediction horizon bucket (`intraday` / `short` / `medium` / `long`).
+```bash
+python scripts/load_polymarket.py --reset-checkpoint
+```
 
-2. **`compute_wallet_weights`**: Blends local per-category/horizon edge estimates with global wallet track records using shrinkage (James-Stein style). Applies style penalties for high churn, miscalibration, and lack of specialization. Output: a trust weight in `[0.10, 4.00]` per wallet per context.
+That forces a clean checkpoint rebuild and backfills any trade history that may have been missed by the previous global checkpoint logic.
 
-3. **`build_snapshots_for_all_markets`**: For each active market, infers wallet beliefs from trade sequences (recency-decayed, persistence-boosted), multiplies by trust weight × confidence, and aggregates into a single Precognition probability with disagreement, Herfindahl concentration, and integrity risk scores.
+### Pipeline Stages
 
-4. **`backfill_market_snapshots`** *(optional)*: Reconstructs `n` evenly-spaced historical snapshots per market from the trade history, enabling time-series visualization.
+Each recompute can run up to four stages:
 
-#### SQLite environment variables
+1. `compute_wallet_metrics`: scores wallets on Brier, log loss, calibration error, churn, persistence, timing edge, ROI, and specialization.
+2. `compute_wallet_weights`: shrinks local category and horizon edge estimates toward each wallet's global track record.
+3. `build_snapshots_for_all_markets`: aggregates wallet beliefs into Precognition probabilities, disagreement, participation quality, and integrity risk.
+4. `backfill_market_snapshots`: optionally reconstructs historical snapshots for charting.
+
+### SQLite Environment Variables
 
 | Variable | Default | Description |
 |---|---|---|

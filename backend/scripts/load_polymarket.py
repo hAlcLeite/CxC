@@ -11,7 +11,7 @@ if str(BACKEND_DIR) not in sys.path:
 
 from app.db import get_connection, init_db  # noqa: E402
 from app.services.backtest import run_backtest  # noqa: E402
-from app.services.pipeline import recompute_pipeline  # noqa: E402
+from app.services.pipeline import build_incremental_recompute_plan, recompute_pipeline  # noqa: E402
 from app.services.polymarket import ingest_polymarket  # noqa: E402
 
 
@@ -43,8 +43,8 @@ def main() -> None:
     parser.add_argument(
         "--backfill-points",
         type=int,
-        default=50,
-        help="Number of evenly-spaced historical snapshots to backfill per market (default: 50).",
+        default=0,
+        help="Number of evenly-spaced historical snapshots to backfill per market (default: 0).",
     )
     args = parser.parse_args()
 
@@ -71,10 +71,16 @@ def main() -> None:
             print("Ingest:", ingest_result)
 
             if not args.skip_recompute:
+                recompute_plan = build_incremental_recompute_plan(
+                    ingest_result,
+                    backfill_points=args.backfill_points,
+                )
                 pipeline_result = recompute_pipeline(
                     conn,
                     include_resolved_snapshots=args.include_resolved_snapshots,
-                    backfill_points=args.backfill_points,
+                    backfill_points=int(recompute_plan["backfill_points"]),
+                    market_ids=list(recompute_plan["market_ids"]),
+                    recompute_wallet_analytics=bool(recompute_plan["recompute_wallet_analytics"]),
                 )
                 print("Pipeline:", pipeline_result)
 

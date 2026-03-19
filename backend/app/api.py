@@ -34,7 +34,7 @@ from app.services.observability import (
     increment_metric,
     start_pipeline_run,
 )
-from app.services.pipeline import recompute_pipeline
+from app.services.pipeline import build_incremental_recompute_plan, recompute_pipeline
 from app.services.polymarket import ingest_polymarket
 from app.services.precognition import build_market_snapshot, latest_screener_rows
 from app.services.backboard import explain_divergence as generate_ai_explanation
@@ -205,10 +205,16 @@ def create_app() -> FastAPI:
                 )
                 pipeline_result: dict[str, int] | None = None
                 if run_recompute:
+                    recompute_plan = build_incremental_recompute_plan(
+                        ingest_result,
+                        backfill_points=req.backfill_points,
+                    )
                     pipeline_result = recompute_pipeline(
                         conn,
                         include_resolved_snapshots=False,
-                        backfill_points=req.backfill_points,
+                        backfill_points=int(recompute_plan["backfill_points"]),
+                        market_ids=list(recompute_plan["market_ids"]),
+                        recompute_wallet_analytics=bool(recompute_plan["recompute_wallet_analytics"]),
                     )
             duration_ms = (time.perf_counter() - started) * 1000.0
             with conn:

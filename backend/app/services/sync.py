@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from app.services.backtest import run_backtest
-from app.services.pipeline import recompute_pipeline
+from app.services.pipeline import build_incremental_recompute_plan, recompute_pipeline
 from app.services.polymarket import ingest_polymarket
 
 
@@ -53,10 +53,14 @@ def run_sync_cycle(conn, config: SyncCycleConfig) -> dict[str, Any]:
 
     pipeline_result: dict[str, int] | None = None
     if config.run_recompute:
+        recompute_plan = build_incremental_recompute_plan(ingest_result)
         pipeline_result = recompute_pipeline(
             conn,
             snapshot_time=None,
             include_resolved_snapshots=config.include_resolved_snapshots,
+            backfill_points=int(recompute_plan["backfill_points"]),
+            market_ids=list(recompute_plan["market_ids"]),
+            recompute_wallet_analytics=bool(recompute_plan["recompute_wallet_analytics"]),
         )
 
     backtest_result: dict[str, Any] | None = None
