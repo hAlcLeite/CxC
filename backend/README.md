@@ -103,9 +103,11 @@ curl -X POST "http://localhost:8000/ingest/polymarket?run_recompute=true" \
 Notes:
 - Markets come from `https://gamma-api.polymarket.com/markets`.
 - Trades come from `https://data-api.polymarket.com/trades`.
+- Only binary markets are ingested. Multi-outcome markets are skipped so YES/NO snapshots are not polluted by non-binary books.
 - Outcomes are inferred for closed binary markets when one final outcome price is near 1.0.
-- Closed markets are fetched from the recent tail by default (`prefer_recent_closed_markets=true`) to avoid stale 2020/2021-only ingestion.
 - Incremental mode stores the latest trade timestamp checkpoint in SQLite (`ingestion_checkpoints`).
+- Newly seen markets are automatically backfilled from full history even when incremental checkpointing is enabled, so fresh listings do not miss older trades.
+- `POST /ingest/polymarket` and `python scripts/load_polymarket.py` now default to `backfill_points=0`; use an explicit backfill flag only when you actually need historical snapshot series.
 
 ## Incremental Sync Tips
 
@@ -115,6 +117,8 @@ Notes:
   - same command, checkpoint is used automatically
 - Force full trade backfill:
   - `python scripts/load_polymarket.py --no-incremental-checkpoint`
+- Generate historical snapshot backfill explicitly:
+  - `python scripts/load_polymarket.py --backfill-points 50`
 - Build snapshots for resolved markets too (off by default for fresher live views):
   - `python scripts/load_polymarket.py --include-resolved-snapshots`
 - Reset checkpoint:

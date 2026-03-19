@@ -30,26 +30,46 @@ def _market_prob_at(conn: sqlite3.Connection, market_id: str, snapshot_time: dat
     return implied_yes_price(row["side"], float(row["price"]))
 
 
+def _load_wallet_weight_lookup(
+    conn: sqlite3.Connection,
+    wallets: list[str],
+) -> dict[str, dict[tuple[str, str], tuple[float, float]]]:
+    if not wallets:
+        return {}
+    placeholders = ",".join("?" for _ in wallets)
+    rows = conn.execute(
+        f"""
+        SELECT wallet, category, horizon_bucket, weight, uncertainty
+        FROM wallet_weights
+        WHERE wallet IN ({placeholders})
+        """,
+        wallets,
+    ).fetchall()
+    lookup: dict[str, dict[tuple[str, str], tuple[float, float]]] = {}
+    for row in rows:
+        wallet = str(row["wallet"])
+        lookup.setdefault(wallet, {})[
+            (str(row["category"]), str(row["horizon_bucket"]))
+        ] = (float(row["weight"]), float(row["uncertainty"]))
+    return lookup
+
+
 def _lookup_wallet_weight(
-    conn: sqlite3.Connection, wallet: str, category: str, horizon_bucket: str
+    weight_lookup: dict[str, dict[tuple[str, str], tuple[float, float]]],
+    wallet: str,
+    category: str,
+    horizon_bucket: str,
 ) -> tuple[float, float]:
+    wallet_weights = weight_lookup.get(wallet, {})
     lookup_order = [
-        (wallet, category, horizon_bucket),
-        (wallet, category, "ALL"),
-        (wallet, "ALL", horizon_bucket),
-        (wallet, "ALL", "ALL"),
+        (category, horizon_bucket),
+        (category, "ALL"),
+        ("ALL", horizon_bucket),
+        ("ALL", "ALL"),
     ]
     for key in lookup_order:
-        row = conn.execute(
-            """
-            SELECT weight, uncertainty
-            FROM wallet_weights
-            WHERE wallet = ? AND category = ? AND horizon_bucket = ?
-            """,
-            key,
-        ).fetchone()
-        if row:
-            return float(row["weight"]), float(row["uncertainty"])
+        if key in wallet_weights:
+            return wallet_weights[key]
     return 1.0, 1.0
 
 
@@ -270,13 +290,14 @@ def build_market_snapshot(
     market_prob = _market_prob_at(conn, market_id, snapshot_dt)
 
     wallet_trades = load_market_wallet_trades(conn, market_id, snapshot_dt)
+    wallet_weight_lookup = _load_wallet_weight_lookup(conn, list(wallet_trades.keys()))
     wallet_signals: list[dict] = []
     for wallet, trades in wallet_trades.items():
         signal = infer_wallet_belief(trades, as_of=snapshot_dt)
         confidence = float(signal["confidence"])
         if confidence <= 0:
             continue
-        weight, uncertainty = _lookup_wallet_weight(conn, wallet, category, horizon_bucket)
+        weight, uncertainty = _lookup_wallet_weight(wallet_weight_lookup, wallet, category, horizon_bucket)
         churn = float(signal["churn"])
         persistence = float(signal["persistence"])
         anti_noise = max(0.40, 1.0 - 0.55 * churn) * (0.85 + 0.30 * persistence)
@@ -468,21 +489,22 @@ def build_market_snapshot(
     return result
 
 
-def build_snapshots_for_all_markets(
+def _target_market_rows(
     conn: sqlite3.Connection,
-    snapshot_time: datetime | None = None,
-    include_resolved: bool = False,
-) -> dict[str, int]:
-    if include_resolved:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT m.id
-            FROM markets m
-            JOIN trades t ON t.market_id = m.id
-            """
-        ).fetchall()
-    else:
-        rows = conn.execute(
+    market_ids: list[str] | None,
+    *,
+    include_resolved: bool,
+) -> list[sqlite3.Row]:
+    if market_ids is None:
+        if include_resolved:
+            return conn.execute(
+                """
+                SELECT DISTINCT m.id
+                FROM markets m
+                JOIN trades t ON t.market_id = m.id
+                """
+            ).fetchall()
+        return conn.execute(
             """
             SELECT DISTINCT m.id
             FROM markets m
@@ -491,6 +513,46 @@ def build_snapshots_for_all_markets(
             WHERE o.market_id IS NULL
             """
         ).fetchall()
+
+    normalized_market_ids = [market_id for market_id in dict.fromkeys(market_ids) if market_id]
+    if not normalized_market_ids:
+        return []
+
+    placeholders = ",".join("?" for _ in normalized_market_ids)
+    if include_resolved:
+        return conn.execute(
+            f"""
+            SELECT DISTINCT m.id
+            FROM markets m
+            JOIN trades t ON t.market_id = m.id
+            WHERE m.id IN ({placeholders})
+            """,
+            normalized_market_ids,
+        ).fetchall()
+    return conn.execute(
+        f"""
+        SELECT DISTINCT m.id
+        FROM markets m
+        JOIN trades t ON t.market_id = m.id
+        LEFT JOIN outcomes o ON o.market_id = m.id
+        WHERE o.market_id IS NULL
+          AND m.id IN ({placeholders})
+        """,
+        normalized_market_ids,
+    ).fetchall()
+
+
+def build_snapshots_for_all_markets(
+    conn: sqlite3.Connection,
+    snapshot_time: datetime | None = None,
+    include_resolved: bool = False,
+    market_ids: list[str] | None = None,
+) -> dict[str, int]:
+    rows = _target_market_rows(
+        conn,
+        market_ids,
+        include_resolved=include_resolved,
+    )
 
     created = 0
     for row in rows:
@@ -502,26 +564,19 @@ def build_snapshots_for_all_markets(
 def backfill_market_snapshots(
     conn: sqlite3.Connection,
     n_points: int = 50,
+    market_ids: list[str] | None = None,
     include_resolved: bool = False,
 ) -> dict[str, int]:
     """Build n_points evenly-spaced historical snapshots per market from first→last trade."""
-    if include_resolved:
-        rows = conn.execute(
-            "SELECT DISTINCT market_id FROM trades"
-        ).fetchall()
-    else:
-        rows = conn.execute(
-            """
-            SELECT DISTINCT t.market_id
-            FROM trades t
-            LEFT JOIN outcomes o ON o.market_id = t.market_id
-            WHERE o.market_id IS NULL
-            """
-        ).fetchall()
+    rows = _target_market_rows(
+        conn,
+        market_ids,
+        include_resolved=include_resolved,
+    )
 
     total = 0
     for row in rows:
-        mid = row["market_id"]
+        mid = row["id"]
         bounds = conn.execute(
             "SELECT MIN(ts) AS t0, MAX(ts) AS t1 FROM trades WHERE market_id = ?",
             (mid,),
