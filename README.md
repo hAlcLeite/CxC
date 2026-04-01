@@ -2,6 +2,8 @@
 
 Precognition is a wallet-weighted prediction market signal platform. It ingests trade-level data from Polymarket, profiles wallet behavior, infers current beliefs from trade sequences, and publishes a manipulation-aware probability that is meant to separate trusted cohort conviction from raw market price. The stack is Next.js on the frontend, FastAPI on the backend, and SQLite for lightweight local storage.
 
+DevPost: https://devpost.com/software/precognition
+
 ## Frontend
 
 Requirements: `pnpm`
